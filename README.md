@@ -1,0 +1,128 @@
+# Nova – AI Agent Chatbot
+
+A secure, production-oriented AI assistant: React + Vite + Tailwind frontend, Flask backend, streaming replies, document
+Q&A with citations, agent tools with human approval, memory, voice, image understanding and an admin dashboard.
+Works with any OpenAI-compatible provider (OpenAI, Gemini, OpenRouter, Groq, Together, Ollama, LM Studio…).
+
+- **Upgrading from the previous version?** Read [UPGRADE NOTES](#upgrading-from-the-previous-version) below.
+- **Deploying?** See [DEPLOYMENT.md](DEPLOYMENT.md). **Security model:** [SECURITY.md](SECURITY.md).
+- **What changed and why:** [AUDIT.md](AUDIT.md).
+
+## Requirements
+Node 18+ (20 recommended) and Python 3.10+. Optional: Redis (shared rate limits with several workers), MySQL,
+Tesseract (OCR for scanned PDFs and images).
+
+## Local development
+
+**1. Backend**
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt    # add -r requirements-dev.txt for tests and lint
+python setup_env.py                # writes backend/.env and tests your AI key (or: cp .env.example .env and edit)
+python app.py                      # http://localhost:5000
+```
+Database tables are created and upgraded automatically on start (`flask --app app migrate` does it explicitly).
+In development the **first account you register becomes the administrator**.
+
+**2. Frontend** (second terminal)
+```bash
+cd frontend
+npm install
+npm run dev                        # http://localhost:5173
+```
+Vite proxies `/api` to Flask, so cookies, CORS and streaming work without extra setup.
+
+**Testing on phones and tablets:** run `npm run dev -- --host` and open the printed network address (for example
+`http://192.168.1.20:5173`) on the device. Add that address to `ALLOWED_ORIGINS` in `backend/.env`. Voice input
+needs HTTPS (or localhost) on most mobile browsers.
+
+## Tests
+```bash
+cd backend && pytest -q                    # 126 API, security, agent, RAG, migration and ops tests
+cd frontend && npm test                    # unit/component tests (Vitest + Testing Library)
+cd frontend && E2E_PYTHON=../backend/.venv/bin/python npm run test:e2e   # Playwright end-to-end
+```
+On Windows (PowerShell): `$env:E2E_PYTHON="..\backend\.venv\Scripts\python.exe"; npm run test:e2e`.
+End-to-end tests start the real backend with a fake OpenAI-compatible provider (`backend/tests/fake_llm.py`) on a fresh
+database, so they need no API key. Projects cover desktop Chrome, a 320 px phone, Android, iPhone (portrait and
+landscape) and iPad viewports; set `E2E_ALL_BROWSERS=1` (after `npx playwright install`) to add Firefox, WebKit/Safari
+and Edge. Lint: `ruff check .` (backend) and `npm run lint` (frontend). CI runs all of these (`.github/workflows/ci.yml`).
+
+## Features
+
+**Chat** – streaming replies, stop, retry, regenerate, edit an earlier message (later replies are replaced), copy,
+👍/👎 feedback, timestamps, Markdown with code blocks and tables (raw HTML is never rendered), conversation search,
+rename, pin, archive, export (Markdown/JSON) and delete. Interrupted replies are kept and clearly marked. Long
+conversations are summarised automatically so older context isn't silently lost.
+
+**Accounts & security** – HttpOnly session cookies (no tokens in browser storage) with server-side revocation, CSRF
+protection, optional two-step verification (authenticator app + recovery codes), email verification, password reset,
+login lockout, session list ("sign out other devices"), data export and account deletion. Settings (theme, voice,
+assistant mode) are stored on the server and follow you to every device.
+
+**Document Q&A (RAG)** – PDF, DOCX, TXT, MD, CSV, and scanned PDFs/images when OCR is installed. Answers cite the
+file and page/section; click a citation to read the passage. Keyword (BM25) search always works locally; set
+`EMBEDDING_MODEL` to add semantic search (hybrid ranking). Duplicate uploads are detected and re-uploads of the same
+file name are versioned. Documents are private to their owner at upload, retrieval and answer time.
+
+**Agent tools** – web search, page reading, calculator, date/time, reports, human handoff, email (always asks for your
+approval, single-use, expires), read-only business database (admins). Specialist agents (research, coding, data) and
+automatic delegation. Bounded by step, tool-time and total-time limits; tool output is treated as untrusted data.
+
+**Images, voice, memory** – attach/paste/drop images; dictate and listen in 12 languages (browser speech APIs); opt-in
+memory you can view and delete.
+
+**Admin dashboard** – overview, users (search, filters, pagination, roles, disable, unlock, sign out), support
+requests, AI usage (tokens, estimated cost, latency p50/p95, failures, per model/user, tool success rates), audit log,
+errors, and quality evaluation.
+
+## Configuration
+All settings live in `backend/.env`; [`backend/.env.example`](backend/.env.example) documents every variable with safe
+placeholders. The most important:
+
+| Variable | Purpose |
+|---|---|
+| `APP_ENV` | `development` (default), `testing` or `production`. Production refuses unsafe settings. |
+| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` | AI provider. The key stays on the server. |
+| `SECRET_KEY` | Required in production (signs reset/verification links). |
+| `DATABASE_URL` | `sqlite:///chat.db` (default) or `mysql+pymysql://user:pass@host:3306/db`. |
+| `APP_URL`, `ALLOWED_ORIGINS` | Public frontend address and the origins allowed to call the API. |
+| `REDIS_URL` | Shared rate limits/quotas across workers (recommended in production). |
+| `SMTP_*`, `REQUIRE_EMAIL_VERIFICATION` | Email for verification and reset links. |
+| `DAILY_TOKEN_LIMIT_PER_USER`, `MONTHLY_BUDGET_USD`, `LLM_PRICE_*` | Cost controls and cost estimates. |
+| `EMBEDDING_MODEL`, `OCR_ENABLED` | Semantic search; OCR for scans. |
+
+## API (summary)
+All endpoints are under `/api`, return JSON errors as `{"error": "...", "code": "..."}`, and (except sign-in, health and
+public config) need the session cookie; state-changing requests also need the `X-CSRF-Token` header returned by
+`/auth/me` and sign-in.
+
+| Area | Endpoints |
+|---|---|
+| Health | `GET /health`, `GET /health/live`, `GET /health/ready` |
+| Auth | `POST /auth/register`, `/auth/login`, `/auth/mfa`, `/auth/logout`, `/auth/logout-all`, `/auth/forgot`, `/auth/reset`, `/auth/verify`, `/auth/resend-verification`; `GET /auth/me`, `/auth/config` |
+| Account | `PATCH /account/profile`, `POST /account/password`, `GET/DELETE /account/sessions[/<id>]`, `POST /account/mfa/{setup,enable,disable}`, `POST /account/verify-email`, `GET /account/export`, `DELETE /account`, `GET/PUT /settings`, `GET /usage` |
+| Conversations | `GET/POST /conversations` (`?q=`, `?archived=1`), `GET/PATCH/DELETE /conversations/<id>`, `DELETE /conversations/<id>/messages`, `GET /conversations/<id>/export?format=md|json`, `GET /search?q=` |
+| Chat | `POST /chat/stream` (SSE: `user`, `delta`, `step`, `done`, `error`; `: ping` heartbeats), `POST /chat`, `POST /chat/resume`, `GET /tools`, `POST /messages/<id>/feedback` |
+| Documents | `GET/POST /documents`, `GET /documents/config`, `DELETE /documents/<id>`, `POST /documents/<id>/reindex` |
+| Other | `POST/GET/DELETE /attachments[/<id>]`, `GET/PUT/POST/DELETE /memory…`, `GET /reports[/<id>]`, `GET/POST /handoffs` |
+| Admin | `GET /admin/stats`, `/admin/usage`, `/admin/users`, `/admin/handoffs`, `/admin/audit`, `/admin/errors`, `/admin/evals…`; `PATCH /admin/users/<id>`, `POST /admin/users/<id>/revoke-sessions`, `POST /admin/handoffs/<id>/resolve` |
+
+## Upgrading from the previous version
+1. Back up `backend/chat.db` (or your MySQL database).
+2. `pip install -r backend/requirements.txt` (adds `cryptography` and `Pillow`) and `npm install` in `frontend`.
+3. Start the backend: missing columns/tables are added automatically and existing users are marked verified. Existing
+   chats, documents, memories and reports are kept.
+4. Everyone signs in again once (sessions moved from browser storage to secure cookies).
+5. In production, set `APP_ENV=production`, `SECRET_KEY`, `APP_URL` and `ALLOWED_ORIGINS`. The "first account
+   becomes admin" rule is off in production: existing admins stay admins; create new ones with
+   `flask --app app create-admin --email you@example.com`.
+6. The backend code moved into the `backend/nova/` package; `python app.py` and `gunicorn app:app` work as before.
+
+## Keyboard & accessibility
+Enter sends, Shift+Enter adds a new line. Every control is keyboard reachable with visible focus; dialogs trap focus,
+close with Esc and return focus; icon buttons have labels; form errors are announced; inputs use 16 px text on phones
+(no iOS zoom); touch targets are at least 44 px; animations respect reduced-motion settings; layouts work from 320 px
+wide in portrait and landscape, with safe-area spacing for notched phones.

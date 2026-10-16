@@ -1,0 +1,22 @@
+line-length = 160
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "B", "S", "I"]
+ignore = [
+  "E731",   # small lambdas in the tool registry are intentional
+  "B008",
+  "S101",   # asserts are fine in tests
+  "S105", "S106",  # test passwords / token names are not secrets
+  "S311",   # random for demo data only
+  "S603", "S607",  # subprocess in tests starts redis-server
+  "S608",   # read-only SQL tool builds text by design (validated + read-only connection)
+  "B904",
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["S", "B"]
+"make_demo_db.py" = ["S"]
+
+[lint.isort]
+known-first-party = ["nova"]

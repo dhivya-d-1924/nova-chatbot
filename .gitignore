@@ -1,0 +1,23 @@
+# dependencies & builds
+node_modules/
+dist/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+frontend/test-results/
+frontend/playwright-report/
+frontend/coverage/
+
+# secrets and local data: never commit
+.env
+.env.*
+!.env.example
+backend/.secret_key
+*.db
+*.db-wal
+*.db-shm
+backend/backups/
+backend/data/

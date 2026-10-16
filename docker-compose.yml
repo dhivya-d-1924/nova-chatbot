@@ -1,0 +1,55 @@
+# Production-style stack:  docker compose up -d --build
+# Fill backend/.env first (APP_ENV=production, SECRET_KEY, LLM_API_KEY, APP_URL, ALLOWED_ORIGINS…). See DEPLOYMENT.md.
+# Put a TLS-terminating proxy (Caddy, nginx, a cloud load balancer) in front of port 8000.
+services:
+  app:
+    build: .
+    env_file: backend/.env
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/chat.db}
+      REDIS_URL: redis://redis:6379/0
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      - "127.0.0.1:8000:8000"   # only reachable through your reverse proxy
+    volumes:
+      - nova-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Optional MySQL instead of SQLite:  docker compose --profile mysql up -d
+  # and set DATABASE_URL=mysql+pymysql://nova:${MYSQL_PASSWORD}@mysql:3306/nova in your shell or .env
+  mysql:
+    image: mysql:8.4
+    profiles: ["mysql"]
+    environment:
+      MYSQL_DATABASE: nova
+      MYSQL_USER: nova
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - nova-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  nova-data:
+  nova-mysql:

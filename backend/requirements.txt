@@ -1,0 +1,18 @@
+# Runtime dependencies (tested with the versions noted; lower bounds keep upgrades safe)
+flask>=3.0,<4
+flask-cors>=4.0
+python-dotenv>=1.0
+openai>=1.40
+sqlalchemy>=2.0,<3
+cryptography>=42          # encrypts MFA secrets at rest
+pypdf>=4.0
+python-docx>=1.1
+Pillow>=10.0              # image documents / OCR
+gunicorn>=22.0; sys_platform != "win32"
+tzdata>=2024.1; sys_platform == "win32"
+
+# Optional (install when you need them):
+#   pymysql>=1.1        DATABASE_URL=mysql+pymysql://...
+#   redis>=5.0          REDIS_URL=redis://...  (shared rate limits/quotas across workers)
+#   pytesseract>=0.3 pypdfium2>=4   OCR for scanned PDFs and images (also needs the tesseract program)
+#   ddgs                web search tool without an API key
