@@ -231,6 +231,9 @@ def tool_defs(ctx, agent=None, allowed=None):
     allowed (a set of names from the user's settings) narrows the list further; it can never widen it."""
     defs = {n: t for n, t in TOOLS.items()
             if t["available"]() and (ctx["role"] == "admin" or not t.get("admin")) and t.get("for_user", lambda c: True)(ctx)}
+    if not ctx.get("eval"):
+        from . import integrations  # internal apps and the user's own Google account
+        defs.update(integrations.tools_for(ctx))
     if allowed is not None:
         defs = {n: t for n, t in defs.items() if n in allowed or n in ALWAYS_TOOLS}
     role = AGENTS.get(agent)
@@ -246,11 +249,12 @@ def resolve_agent(ctx, agent_id):
     return agent_id if agent_id in AGENTS and AGENTS[agent_id]["requires"] in tool_defs(ctx) else None
 
 
-def log_tool(ctx, name, args, status, summary, duration_ms=None):
+def log_tool(ctx, name, args, status, summary, duration_ms=None, t=None):
     if ctx.get("eval"):
         return
     try:
-        audit = TOOLS[name].get("audit", lambda a: a)(args) if name in TOOLS else {"task_length": len(str(args.get("task", "")))}
+        spec = t or TOOLS.get(name)
+        audit = spec.get("audit", lambda a: a)(args) if spec else {"task_length": len(str(args.get("task", "")))}
         with db.engine.begin() as c:
             c.execute(insert(db.tool_log).values(
                 id=str(uuid.uuid4()), user_id=ctx["uid"], conversation_id=ctx["cid"], tool=name,
@@ -309,7 +313,7 @@ def agent_events(ctx, msgs, steps, defs, queue=None, max_rounds=None, deadline=N
                 result, step["status"], step["summary"] = f"Error: the tool '{name}' is not available.", "error", "Not available"
             elif call.get("decision") == "declined":
                 result, step["status"], step["summary"] = "The user declined this action. Do not retry it.", "declined", "You declined"
-                log_tool(ctx, name, args, "declined", "")
+                log_tool(ctx, name, args, "declined", "", t=t)
             elif time.monotonic() > deadline:
                 result, step["status"], step["summary"] = "Error: time limit reached; not run.", "error", "Skipped: time limit"
             else:
@@ -323,7 +327,7 @@ def agent_events(ctx, msgs, steps, defs, queue=None, max_rounds=None, deadline=N
                     log.exception("Tool crashed: %s", name)
                     result, step["status"], step["summary"] = "Error: the tool failed unexpectedly.", "error", "Failed unexpectedly"
                 step["ms"] = int((time.perf_counter() - t0) * 1000)
-                log_tool(ctx, name, args, step["status"], step.get("summary"), step["ms"])
+                log_tool(ctx, name, args, step["status"], step.get("summary"), step["ms"], t=t)
             msgs.append({"role": "tool", "tool_call_id": call["id"], "content": fence(name, str(result)[:6000])})
             yield {"type": "step", "step": step}
 

@@ -8,6 +8,7 @@ Works with any OpenAI-compatible provider (OpenAI, Gemini, OpenRouter, Groq, Tog
 - **Deploying?** See [DEPLOYMENT.md](DEPLOYMENT.md). **Security model:** [SECURITY.md](SECURITY.md).
 - **What changed and why:** [AUDIT.md](AUDIT.md).
 - **WhatsApp, Microsoft Teams and email:** [CHANNELS.md](CHANNELS.md).
+- **Internal apps (any REST API) and Google Workspace:** [INTEGRATIONS.md](INTEGRATIONS.md).
 
 ## Requirements
 Node 18+ (20 recommended) and Python 3.10+. Optional: Redis (shared rate limits with several workers), MySQL,
@@ -41,7 +42,7 @@ needs HTTPS (or localhost) on most mobile browsers.
 
 ## Tests
 ```bash
-cd backend && pytest -q                    # 160 API, security, agent, RAG, study, channel, migration and ops tests
+cd backend && pytest -q                    # 176 API, security, agent, RAG, study, channel, integration, migration and ops tests
 cd frontend && npm test                    # unit/component tests (Vitest + Testing Library)
 cd frontend && E2E_PYTHON=../backend/.venv/bin/python npm run test:e2e   # Playwright end-to-end
 ```
@@ -71,6 +72,11 @@ file name are versioned. Documents are private to their owner at upload, retriev
 **Agent tools** – web search, page reading, calculator, date/time, reports, human handoff, email (always asks for your
 approval, single-use, expires), read-only business database (admins). Specialist agents (research, coding, data) and
 automatic delegation. Bounded by step, tool-time and total-time limits; tool output is treated as untrusted data.
+
+**Internal apps and Google Workspace** – administrators connect any internal REST API (HR, CRM, tickets…) in
+Admin → Apps and choose the actions the assistant may use; reads run directly, changes always need the user's approval,
+keys are encrypted and never reach the AI. Each person can connect their own Google account (Calendar, Drive, Gmail;
+creating events needs approval). Setup: [INTEGRATIONS.md](INTEGRATIONS.md).
 
 **Study mode** – create a subject, add the syllabus and study material, and get a day-by-day study plan (5 days by
 default, up to 14) with topics, goals and tasks you can tick off. Generate study material for any topic or plan day
@@ -104,6 +110,7 @@ placeholders. The most important:
 | `SMTP_*`, `REQUIRE_EMAIL_VERIFICATION` | Email for verification and reset links. |
 | `DAILY_TOKEN_LIMIT_PER_USER`, `MONTHLY_BUDGET_USD`, `LLM_PRICE_*` | Cost controls and cost estimates. |
 | `EMBEDDING_MODEL`, `OCR_ENABLED` | Semantic search; OCR for scans. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `INTEGRATION_ALLOWED_HOSTS` | Google Workspace and internal app limits (see INTEGRATIONS.md). |
 | `WHATSAPP_*`, `TEAMS_*`, `EMAIL_CHANNEL_*` | WhatsApp, Microsoft Teams and email channels (see CHANNELS.md). |
 
 ## API (summary)
@@ -119,6 +126,7 @@ public config) need the session cookie; state-changing requests also need the `X
 | Conversations | `GET/POST /conversations` (`?q=`, `?archived=1`), `GET/PATCH/DELETE /conversations/<id>`, `DELETE /conversations/<id>/messages`, `GET /conversations/<id>/export?format=md|json`, `GET /search?q=` |
 | Chat | `POST /chat/stream` (SSE: `user`, `delta`, `step`, `done`, `error`; `: ping` heartbeats), `POST /chat`, `POST /chat/resume`, `GET /tools`, `POST /messages/<id>/feedback` |
 | Documents | `GET/POST /documents`, `GET /documents/config`, `DELETE /documents/<id>`, `POST /documents/<id>/reindex` |
+| Integrations | `GET /integrations`, `GET /integrations/google/connect`, `GET /integrations/google/callback`, `DELETE /integrations/google`; admin `GET/POST /admin/integrations`, `PATCH/DELETE /admin/integrations/<id>`, `POST/PATCH/DELETE /admin/integrations/<id>/actions[/<action>]`, `POST …/actions/<action>/test` |
 | Study | `GET/POST /subjects`, `GET/PATCH/DELETE /subjects/<id>`, `POST/DELETE /subjects/<id>/documents[/<doc>]`, `POST /subjects/<id>/plan`, `PATCH /subjects/<id>/plan/days/<n>`, `GET/POST /subjects/<id>/notes`, `GET/DELETE /subjects/<id>/notes/<note>`, `POST /subjects/<id>/chat`, `GET /doubts`, `POST /subjects/<id>/doubts`, `PATCH/DELETE /doubts/<id>` |
 | Channels | `GET /channels`, `POST /channels/<whatsapp|teams|email>/link-code`, `DELETE /channels/links/<id>`; webhooks `GET/POST /channels/whatsapp/webhook`, `POST /channels/teams/messages`; `GET /admin/channels` |
 | Other | `POST/GET/DELETE /attachments[/<id>]`, `GET/PUT/POST/DELETE /memory…`, `GET /reports[/<id>]`, `GET/POST /handoffs` |

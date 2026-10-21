@@ -192,6 +192,7 @@ def export_account():
         plans = {p.subject_id: p for p in c.execute(select(db.study_plans).where(db.study_plans.c.user_id == uid))}
         notes = c.execute(select(db.study_notes).where(db.study_notes.c.user_id == uid)).all()
         doubt_rows = c.execute(select(db.doubts).where(db.doubts.c.user_id == uid)).all()
+        work = c.execute(select(db.user_connections).where(db.user_connections.c.user_id == uid)).all()
     by_conv = {}
     for m in msgs:
         by_conv.setdefault(m.conversation_id, []).append({"role": m.role, "content": m.content, "created_at": iso(m.created_at)})
@@ -212,6 +213,8 @@ def export_account():
                              for n in notes if n.subject_id == s.id],
                    "doubts": [{"question": d.question, "status": d.status, "note": d.note, "created_at": iso(d.created_at)}
                               for d in doubt_rows if d.subject_id == s.id]} for s in subjects],
+        "work_accounts": [{"provider": w.provider, "account": w.account, "connected_at": iso(w.created_at)}
+                          for w in work],
         "connected_apps": [{"channel": lk.channel, "account": lk.display, "linked_at": iso(lk.created_at),
                             "last_used_at": iso(lk.last_used_at)} for lk in links],
     }
@@ -235,7 +238,7 @@ def delete_user_data(c, uid):
         c.execute(delete(db.conversations).where(db.conversations.c.id.in_(cids)))
     for t in (db.doc_chunks, db.documents, db.memories, db.reports, db.attachments, db.feedback, db.pending_actions,
               db.handoffs, db.channel_links, db.channel_link_codes, db.channel_threads, db.subject_documents, db.study_plans,
-              db.study_notes, db.doubts, db.subjects):
+              db.study_notes, db.doubts, db.subjects, db.user_connections):
         c.execute(delete(t).where(t.c.user_id == uid))
     c.execute(update(db.tool_log).where(db.tool_log.c.user_id == uid).values(user_id=None, args=None))
     c.execute(update(db.errors).where(db.errors.c.user_id == uid).values(user_id=None))

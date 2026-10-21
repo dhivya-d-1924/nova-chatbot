@@ -235,6 +235,16 @@ class Settings:
         if self.ALERT_WEBHOOK_URL and not _is_http_url(self.ALERT_WEBHOOK_URL):
             self.errors.append("ALERT_WEBHOOK_URL must be an http(s) URL.")
 
+        # --- internal app integrations and Google Workspace
+        self.INTEGRATION_TIMEOUT = self._int("INTEGRATION_TIMEOUT_SECONDS", 15, 1, 120)
+        self.INTEGRATION_ALLOWED_HOSTS = [h.lower() for h in self._list("INTEGRATION_ALLOWED_HOSTS")]
+        self.GOOGLE_CLIENT_ID = self._str("GOOGLE_CLIENT_ID")
+        self.GOOGLE_CLIENT_SECRET = self._raw("GOOGLE_CLIENT_SECRET", "").strip()
+        self.GOOGLE_ALLOWED_DOMAIN = self._str("GOOGLE_ALLOWED_DOMAIN").lower().lstrip("@")
+        self.GOOGLE_ENABLED = bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
+        if bool(self.GOOGLE_CLIENT_ID) != bool(self.GOOGLE_CLIENT_SECRET):
+            (self.errors if prod else self.warnings).append("Google Workspace needs both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.")
+
         # --- channels: WhatsApp, Microsoft Teams, email (each turns on when its credentials are set)
         self.CHANNEL_LINK_CODE_MINUTES = self._int("CHANNEL_LINK_CODE_MINUTES", 10, 1, 120)
         self.CHANNEL_DOCUMENTS = self._str("CHANNEL_DOCUMENTS", "command").lower()  # command ("docs ..."), always, off
@@ -306,6 +316,7 @@ class Settings:
                 "embeddings": bool(self.EMBEDDING_MODEL), "smtp": bool(self.SMTP_HOST), "redis": bool(self.REDIS_URL),
                 "email_verification": self.REQUIRE_EMAIL_VERIFICATION, "registration_open": self.REGISTRATION_OPEN,
                 "database": self.DATABASE_URL.split(":", 1)[0].split("+")[0],
+                "google_workspace": self.GOOGLE_ENABLED,
                 "channels": {"whatsapp": self.WHATSAPP_ENABLED, "teams": self.TEAMS_ENABLED, "email": self.EMAIL_CHANNEL_ENABLED}}
 
 

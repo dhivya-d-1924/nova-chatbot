@@ -24,6 +24,9 @@ function renderPanel() {
 describe("Connected apps", () => {
   it("lists channels, shows a link code and unlinks", async () => {
     vi.spyOn(api, "channels").mockResolvedValue({ channels });
+    vi.spyOn(api, "integrations").mockResolvedValue({ apps: [{ name: "HR system", description: "Leave", actions: [{ label: "Raise an HR ticket", approval: true }] }],
+      google: { configured: true, connected: false, account: null, domain: "corp.test" } });
+    const gconnect = vi.spyOn(api, "googleConnect").mockResolvedValue({ url: "https://accounts.google.com/o/oauth2/v2/auth?x=1" });
     const code = vi.spyOn(api, "channelLinkCode").mockResolvedValue({ code: "123456", message: "link 123456", send_to: "+91 98765 43210", minutes: 10 });
     const unlink = vi.spyOn(api, "unlinkChannel").mockResolvedValue({ ok: true });
     renderPanel();
@@ -35,6 +38,13 @@ describe("Connected apps", () => {
     expect(screen.getByRole("link", { name: /Open WhatsApp/ })).toHaveAttribute("href", "https://wa.me/919876543210?text=link%20123456");
     await userEvent.click(screen.getByRole("button", { name: "Unlink" }));
     expect(unlink).toHaveBeenCalledWith("l1");
+    expect(screen.getByText("Raise an HR ticket (approval)")).toBeInTheDocument();
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    await userEvent.click(screen.getByRole("button", { name: "Connect Google (corp.test)" }));
+    expect(gconnect).toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledWith("https://accounts.google.com/o/oauth2/v2/auth?x=1");
+    vi.unstubAllGlobals();
   });
 
   it("builds safe deep links only for real addresses", () => {

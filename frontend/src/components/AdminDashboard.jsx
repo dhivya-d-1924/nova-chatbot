@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Activity, AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Coins, Gauge, Headset, LayoutGrid, Menu,
+  Activity, AlertTriangle, ArrowLeft, Boxes, ChevronLeft, ChevronRight, ClipboardList, Coins, Gauge, Headset, LayoutGrid, Menu,
   MessageSquare, MessagesSquare, Plug, RefreshCw, Search, ThumbsDown, ThumbsUp, Users,
 } from "lucide-react";
+import AdminIntegrations from "./AdminIntegrations";
 import EvalPanel from "./EvalPanel";
 import IconButton from "./IconButton";
 import ThemeToggle from "./ThemeToggle";
@@ -18,7 +19,7 @@ const money = (n) => `$${(n ?? 0).toFixed((n ?? 0) < 1 ? 4 : 2)}`;
 const field = "min-h-11 rounded-xl border border-line/15 bg-ink/5 px-3 text-base focus:border-accent focus:outline-none sm:text-sm";
 const TABS = [
   ["overview", "Overview", LayoutGrid], ["users", "Users", Users], ["support", "Support", Headset], ["usage", "Usage", Gauge],
-  ["channels", "Channels", Plug], ["audit", "Audit log", ClipboardList], ["errors", "Errors", AlertTriangle],
+  ["apps", "Apps", Boxes], ["channels", "Channels", Plug], ["audit", "Audit log", ClipboardList], ["errors", "Errors", AlertTriangle],
   ["evals", "Evaluation", Activity],
 ];
 
@@ -499,6 +500,7 @@ export default function AdminDashboard({ me, onBack, onOpenMenu }) {
         {tab === "users" && <UsersTab me={me} />}
         {tab === "support" && <SupportTab />}
         {tab === "usage" && <UsageTab />}
+        {tab === "apps" && <AdminIntegrations />}
         {tab === "channels" && <ChannelsTab />}
         {tab === "audit" && <AuditTab />}
         {tab === "errors" && <ErrorsTab />}

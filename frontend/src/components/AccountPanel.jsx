@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Copy, Download, ExternalLink, KeyRound, Laptop, Link2, Loader2, LogOut, Mail, MessageCircle, ShieldCheck, Trash2, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, Boxes, Building2, CheckCircle2, Copy, Download, ExternalLink, KeyRound, Laptop, Link2, Loader2, LogOut, Mail, MessageCircle, ShieldCheck, Trash2, UserCog, Users, X } from "lucide-react";
 import { api } from "../lib/api";
 import { formatWhen, useCopy, useDialog } from "../lib/hooks";
 import { overlay, spring } from "../lib/motion";
@@ -276,6 +276,49 @@ function LinkCode({ channel, info, onDone }) {
   );
 }
 
+function WorkApps() {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const a = useAction();
+  const load = useCallback(() => a.run(async () => setData(await api.integrations())), [a.run]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+  if (!data) return <div className="h-20 animate-pulse rounded-xl bg-ink/10" aria-busy="true" />;
+  const g = data.google;
+  const connect = () => a.run(async () => { window.location.assign((await api.googleConnect()).url); });
+  const disconnect = () => a.run(async () => { await api.googleDisconnect(); toast.success("Google disconnected."); await load(); });
+  return (
+    <div className="space-y-3">
+      <Section title={<span className="inline-flex items-center gap-2"><Building2 size={16} aria-hidden="true" /> Google Workspace</span>}
+        description={g.configured ? "Let Nova read your calendar, Drive files and Gmail, and create calendar events after you approve." : "Not set up on this server yet. Ask your administrator."}>
+        {g.connected ? (
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <CheckCircle2 size={16} className="shrink-0 text-emerald-400" aria-hidden="true" />
+            <span className="min-w-0 flex-1 break-all">Connected as <strong>{g.account}</strong></span>
+            <button type="button" onClick={disconnect} disabled={a.busy} className="min-h-9 rounded-lg px-2 text-xs font-semibold text-red-400 hover:bg-red-500/10">Disconnect</button>
+          </div>
+        ) : g.configured && (
+          <button type="button" onClick={connect} disabled={a.busy} className={secondary}><Link2 size={15} /> Connect Google{g.domain ? ` (${g.domain})` : ""}</button>
+        )}
+      </Section>
+      {data.apps.length > 0 && (
+        <Section title={<span className="inline-flex items-center gap-2"><Boxes size={16} aria-hidden="true" /> Company apps</span>}
+          description="Set up by your administrator. Just ask in chat, for example “What's my leave balance?”. Actions marked approval ask you first.">
+          <ul className="space-y-2">
+            {data.apps.map((app) => (
+              <li key={app.name} className="rounded-xl border border-line/10 p-3 text-sm">
+                <p className="font-medium">{app.name}</p>
+                {app.description && <p className="text-xs text-muted">{app.description}</p>}
+                <p className="mt-1 text-xs text-muted">{app.actions.map((x) => x.label + (x.approval ? " (approval)" : "")).join(" · ") || "No actions yet"}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+      <ErrorText error={a.error} />
+    </div>
+  );
+}
+
 function ConnectedApps() {
   const toast = useToast();
   const [list, setList] = useState(null);
@@ -288,7 +331,9 @@ function ConnectedApps() {
   const unlink = (ch, l) => a.run(async () => { await api.unlinkChannel(l.id); toast.success(`${ch.label} disconnected.`); await load(); });
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted">Chat with Nova from the apps you already use. Each app answers only after you link it to this account.</p>
+      <WorkApps />
+      <h3 className="pt-2 font-display text-sm font-semibold">Chat with Nova from</h3>
+      <p className="text-sm text-muted">Each app answers only after you link it to this account.</p>
       {!list ? <div className="h-24 animate-pulse rounded-xl bg-ink/10" aria-busy="true" /> : list.map((ch) => {
         const Icon = CHANNEL_ICONS[ch.id] || Link2;
         return (
@@ -345,8 +390,9 @@ function YourData({ auth }) {
   );
 }
 
-export default function AccountPanel({ open, onClose, user, auth }) {
-  const [tab, setTab] = useState("profile");
+export default function AccountPanel({ open, onClose, user, auth, initialTab = "profile" }) {
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => { if (open) setTab(initialTab); }, [open, initialTab]);
   const ref = useRef(null);
   useDialog(open, onClose, ref);
   return (

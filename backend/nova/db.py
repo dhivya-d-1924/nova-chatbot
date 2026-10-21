@@ -241,6 +241,49 @@ usage = Table(
     Column("latency_ms", Integer, nullable=False, default=0),
     Column("status", String(12), nullable=False),        # ok | error
 )
+integrations = Table(           # an internal app (any REST API) registered by an administrator
+    "integrations", md,
+    Column("id", String(36), primary_key=True),
+    Column("name", String(100), nullable=False),
+    Column("slug", String(30), nullable=False, unique=True),  # tool name prefix, e.g. hr
+    Column("description", Text, nullable=True),
+    Column("base_url", String(500), nullable=False),
+    Column("auth_type", String(12), nullable=False, default="none"),  # none | bearer | header | basic
+    Column("auth_header", String(100), nullable=True),     # header name for auth_type=header, e.g. X-API-Key
+    Column("secret", Text, nullable=True),                 # encrypted at rest; never returned by the API
+    Column("audience", String(12), nullable=False, default="all"),  # all | admin
+    Column("send_user", Integer, nullable=False, default=1),  # add X-Nova-User-Email / X-Nova-User-Id headers
+    Column("enabled", Integer, nullable=False, default=1),
+    Column("created_at", BigInteger, nullable=False),
+    Column("updated_at", BigInteger, nullable=False),
+)
+integration_actions = Table(    # one endpoint the agent may call, with its parameters
+    "integration_actions", md,
+    Column("id", String(36), primary_key=True),
+    Column("integration_id", String(36), ForeignKey("integrations.id"), nullable=False, index=True),
+    Column("name", String(30), nullable=False),            # e.g. get_employee
+    Column("label", String(100), nullable=False),          # shown to people, e.g. "Look up an employee"
+    Column("description", Text, nullable=False),           # tells the model when to use it
+    Column("method", String(8), nullable=False),           # GET | POST | PUT | PATCH | DELETE
+    Column("path", String(500), nullable=False),           # e.g. /employees/{employee_id}
+    Column("params", Text, nullable=False),                # JSON list of {name, type, description, required, in}
+    Column("approval", Integer, nullable=False, default=1),  # 1 = the user must approve each call
+    Column("enabled", Integer, nullable=False, default=1),
+    Column("created_at", BigInteger, nullable=False),
+)
+user_connections = Table(       # a person's own account in an external service (Google Workspace)
+    "user_connections", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id"), nullable=False, index=True),
+    Column("provider", String(16), nullable=False),
+    Column("account", String(255), nullable=True),
+    Column("scopes", Text, nullable=True),
+    Column("access_token", Text, nullable=True),           # encrypted
+    Column("refresh_token", Text, nullable=True),          # encrypted
+    Column("expires_at", BigInteger, nullable=True),
+    Column("created_at", BigInteger, nullable=False),
+    Column("updated_at", BigInteger, nullable=False),
+)
 subjects = Table(               # Study mode: a subject with its syllabus and material
     "subjects", md,
     Column("id", String(36), primary_key=True),
@@ -339,6 +382,8 @@ schema_migrations = Table(
 Index("ix_messages_conv_created", messages.c.conversation_id, messages.c.created_at)
 Index("ix_conversations_user_updated", conversations.c.user_id, conversations.c.updated_at)
 Index("ix_usage_user_created", usage.c.user_id, usage.c.created_at)
+Index("ux_integration_action_name", integration_actions.c.integration_id, integration_actions.c.name, unique=True)
+Index("ux_user_connection", user_connections.c.user_id, user_connections.c.provider, unique=True)
 Index("ux_channel_links_external", channel_links.c.channel, channel_links.c.external_id, unique=True)
 
 _clock = threading.Lock()

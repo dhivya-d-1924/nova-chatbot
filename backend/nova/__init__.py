@@ -100,8 +100,9 @@ def create_app(overrides=None):
     from .chat_routes import bp as chat_bp
     from .conversation_routes import bp as conversation_bp
     from .data_routes import bp as data_bp
+    from .integrations import bp as integrations_bp
     from .study import bp as study_bp
-    for bp in (auth_bp, account_bp, conversation_bp, chat_bp, data_bp, admin_bp, channels.bp, study_bp):
+    for bp in (auth_bp, account_bp, conversation_bp, chat_bp, data_bp, admin_bp, channels.bp, study_bp, integrations_bp):
         app.register_blueprint(bp)
 
     # ---- built frontend (single-server deployment)

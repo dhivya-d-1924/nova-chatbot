@@ -32,6 +32,7 @@ function ChatApp({ user, auth }) {
   const [docsOpen, setDocsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [accountTab, setAccountTab] = useState("profile");
   const [study, setStudy] = useState(null); // null = closed, {} = subject list, { id, tab } = a subject
   const [health, setHealth] = useState(null);
   const [view, setView] = useState("chat"); // chat | admin
@@ -50,6 +51,19 @@ function ChatApp({ user, auth }) {
     return () => clearInterval(t);
   }, [health, online, checkHealth]);
   useEffect(() => { if (online) checkHealth(); }, [online, checkHealth]);
+
+  // Back from Google's sign-in page: show the result once and tidy the address bar.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("integration") !== "google") return;
+    const status = q.get("status");
+    if (status === "connected") toast.success(`Google connected (${q.get("reason") || "your account"}).`);
+    else if (status === "cancelled") toast.info("Google connection cancelled.");
+    else toast.error(`Couldn't connect Google: ${q.get("reason") || "unknown error"}`);
+    window.history.replaceState(null, "", window.location.pathname);
+    setAccountTab("apps");
+    setAccountOpen(true);
+  }, [toast]);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const cancelConfirm = useCallback(() => setConfirm(null), []);
@@ -94,7 +108,7 @@ function ChatApp({ user, auth }) {
                 onLogout={auth.logout}
                 onAdmin={() => { setView("admin"); setMenuOpen(false); }}
                 onMemory={() => { setMemoryOpen(true); setMenuOpen(false); }}
-                onAccount={() => { setAccountOpen(true); setMenuOpen(false); }}
+                onAccount={() => { setAccountTab("profile"); setAccountOpen(true); setMenuOpen(false); }}
                 onStudy={() => { setStudy({}); setMenuOpen(false); }}
               />
               {view === "admin" && user.role === "admin" ? (
@@ -137,7 +151,7 @@ function ChatApp({ user, auth }) {
       <DocumentsPanel open={docsOpen} onClose={() => setDocsOpen(false)} docs={docs} />
       <StudyPanel open={!!study} target={study} onClose={() => setStudy(null)}
         onOpenChat={async (conv) => { setStudy(null); setView("chat"); await chat.refreshList(); chat.selectConversation(conv.id); }} />
-      <AccountPanel open={accountOpen} onClose={() => setAccountOpen(false)} user={user} auth={auth} />
+      <AccountPanel open={accountOpen} onClose={() => setAccountOpen(false)} user={user} auth={auth} initialTab={accountTab} />
 
       <ConfirmModal
         open={!!confirm}

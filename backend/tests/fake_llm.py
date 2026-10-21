@@ -3,6 +3,7 @@
 Used only by the automated tests and the browser end-to-end tests so they exercise the real HTTP path through
 the OpenAI SDK without a paid key. Behaviour is driven by keywords in the latest user message:
   "calc <expr>"    -> calls the calculate tool, then answers with its result
+  "app <tool> {json}" -> calls any offered tool (e.g. an internal app action) with those arguments
   "email <addr>"   -> calls send_email (needs approval)
   "slow"           -> waits 2 s between stream chunks
   "fail500"        -> HTTP 500
@@ -59,6 +60,9 @@ def _reply_for(body):
         content = tool_msgs[-1]["content"]
         inner = re.sub(r"</?untrusted[^>]*>", "", content).strip()
         return {"text": f"Tool result: {inner[:300]}"}
+    m = re.search(r"app (\S+) (\{.*\})", last)
+    if m and m.group(1) in tools:
+        return {"tool": (m.group(1), json.loads(m.group(2)))}
     m = re.search(r"calc (.+)", last)
     if m and "calculate" in tools:
         return {"tool": ("calculate", {"expression": m.group(1).strip()})}
