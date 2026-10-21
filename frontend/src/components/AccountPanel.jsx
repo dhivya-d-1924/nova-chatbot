@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Copy, Download, KeyRound, Laptop, Loader2, LogOut, ShieldCheck, Trash2, UserCog, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Download, ExternalLink, KeyRound, Laptop, Link2, Loader2, LogOut, Mail, MessageCircle, ShieldCheck, Trash2, UserCog, Users, X } from "lucide-react";
 import { api } from "../lib/api";
 import { formatWhen, useCopy, useDialog } from "../lib/hooks";
 import { overlay, spring } from "../lib/motion";
 import { useSettings } from "../lib/settings";
 import { useToast } from "../lib/toast";
 
-const TABS = [["profile", "Profile"], ["security", "Security"], ["devices", "Devices"], ["data", "Your data"]];
+const TABS = [["profile", "Profile"], ["security", "Security"], ["devices", "Devices"], ["apps", "Apps"], ["data", "Your data"]];
 const input = "min-h-11 w-full rounded-xl border border-line/15 bg-ink/5 px-3 text-base placeholder:text-muted/70 focus:border-accent focus:outline-none sm:text-sm";
 const primary = "btn-gradient inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:opacity-50";
 const secondary = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line/20 px-4 text-sm font-medium hover:bg-ink/10 disabled:opacity-50";
@@ -241,6 +241,85 @@ function describeAgent(ua = "") {
   return `${br} on ${os}`;
 }
 
+const CHANNEL_ICONS = { whatsapp: MessageCircle, teams: Users, email: Mail };
+
+/** Deep link that opens the app with "link 123456" already typed, when the address allows it. */
+export function openLink(channel, sendTo, message) {
+  if (channel === "whatsapp") {
+    const digits = (sendTo || "").replace(/\D/g, "");
+    return digits.length >= 8 ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : null;
+  }
+  if (channel === "email" && /^[^@\s]+@[^@\s]+$/.test(sendTo || "")) {
+    return `mailto:${sendTo}?subject=${encodeURIComponent("Link my Nova account")}&body=${encodeURIComponent(message)}`;
+  }
+  return null;
+}
+
+function LinkCode({ channel, info, onDone }) {
+  const { copied, copy } = useCopy();
+  const href = openLink(channel, info.send_to, info.message);
+  return (
+    <div className="mt-3 rounded-xl border border-accent/30 bg-accent/5 p-3" aria-live="polite">
+      <p className="text-sm">Send this message to <strong className="break-words">{info.send_to}</strong>:</p>
+      <div className="mt-2 flex items-center gap-2">
+        <code className="min-w-0 flex-1 rounded-lg bg-ink/10 px-3 py-2 text-center font-mono text-lg tracking-widest" data-testid="link-code">{info.message}</code>
+        <button type="button" onClick={() => copy(info.message)} aria-label="Copy message" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line/20 hover:bg-ink/10">
+          {copied ? <CheckCircle2 size={16} className="text-emerald-400" /> : <Copy size={16} />}
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-muted">The code works once and expires in {info.minutes} minutes.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {href && <a href={href} target="_blank" rel="noopener noreferrer" className={secondary}><ExternalLink size={15} /> Open {channel === "email" ? "email" : "WhatsApp"}</a>}
+        <button type="button" onClick={onDone} className={primary}>I've sent it</button>
+      </div>
+    </div>
+  );
+}
+
+function ConnectedApps() {
+  const toast = useToast();
+  const [list, setList] = useState(null);
+  const [codes, setCodes] = useState({});
+  const a = useAction();
+  const load = useCallback(() => a.run(async () => setList((await api.channels()).channels)), [a.run]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+  const start = (ch) => a.run(async () => { const info = await api.channelLinkCode(ch.id); setCodes((c) => ({ ...c, [ch.id]: info })); });
+  const finish = (ch) => { setCodes((c) => ({ ...c, [ch.id]: undefined })); load(); };
+  const unlink = (ch, l) => a.run(async () => { await api.unlinkChannel(l.id); toast.success(`${ch.label} disconnected.`); await load(); });
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted">Chat with Nova from the apps you already use. Each app answers only after you link it to this account.</p>
+      {!list ? <div className="h-24 animate-pulse rounded-xl bg-ink/10" aria-busy="true" /> : list.map((ch) => {
+        const Icon = CHANNEL_ICONS[ch.id] || Link2;
+        return (
+          <Section key={ch.id} title={<span className="inline-flex items-center gap-2"><Icon size={16} aria-hidden="true" /> {ch.label}</span>}
+            description={ch.enabled ? `Message ${ch.send_to}.${ch.approvals ? "" : " Actions that need approval (like sending email) are only available in the web app and on WhatsApp/Teams."}` : "Not set up on this server yet. Ask your administrator."}>
+            {ch.links.length > 0 && (
+              <ul className="mb-2 space-y-2">
+                {ch.links.map((l) => (
+                  <li key={l.id} className="flex items-center gap-3 rounded-xl border border-line/10 p-3 text-sm">
+                    <CheckCircle2 size={16} className="shrink-0 text-emerald-400" aria-hidden="true" />
+                    <div className="min-w-0 flex-1"><p className="break-words font-medium">{l.display}</p>
+                      <p className="text-xs text-muted">Linked {formatWhen(l.created_at)}{l.last_used_at ? ` · last used ${formatWhen(l.last_used_at)}` : ""}</p></div>
+                    <button type="button" onClick={() => unlink(ch, l)} disabled={a.busy} className="min-h-9 shrink-0 rounded-lg px-2 text-xs font-semibold text-red-400 hover:bg-red-500/10">Unlink</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {ch.enabled && !codes[ch.id] && (
+              <button type="button" onClick={() => start(ch)} disabled={a.busy} className={secondary}>
+                <Link2 size={15} /> {ch.links.length ? "Link another" : `Link ${ch.label}`}
+              </button>
+            )}
+            {codes[ch.id] && <LinkCode channel={ch.id} info={codes[ch.id]} onDone={() => finish(ch)} />}
+          </Section>
+        );
+      })}
+      <ErrorText error={a.error} />
+    </div>
+  );
+}
+
 function YourData({ auth }) {
   const [pw, setPw] = useState("");
   const [typed, setTyped] = useState("");
@@ -248,7 +327,7 @@ function YourData({ auth }) {
   const remove = (e) => { e.preventDefault(); a.run(async () => { await api.deleteAccount(pw); await auth.logout(); }); };
   return (
     <div className="space-y-3">
-      <Section title="Download your data" description="Your profile, conversations, document list, memories and reports as a JSON file.">
+      <Section title="Download your data" description="Your profile, conversations, document list, memories, reports and connected apps as a JSON file.">
         <button type="button" onClick={() => a.run(() => api.exportAccount())} disabled={a.busy} className={secondary}><Download size={15} /> Download</button>
       </Section>
       <Section title="Delete your account" description="Permanently removes your account, conversations, documents, images, memories and reports. This can't be undone.">
@@ -286,7 +365,7 @@ export default function AccountPanel({ open, onClose, user, auth }) {
               </div>
               <button type="button" onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-ink/10 hover:text-ink"><X size={20} /></button>
             </div>
-            <div role="tablist" aria-label="Account sections" className="mx-5 grid grid-cols-2 gap-1 rounded-xl bg-ink/5 p-1 text-sm min-[420px]:grid-cols-4">
+            <div role="tablist" aria-label="Account sections" className="mx-5 grid grid-cols-3 gap-1 rounded-xl bg-ink/5 p-1 text-sm sm:grid-cols-5">
               {TABS.map(([id, label]) => (
                 <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={`acct-${id}`} onClick={() => setTab(id)}
                   className={`min-h-10 whitespace-nowrap rounded-lg px-2 ${tab === id ? "bg-panel font-semibold shadow" : "text-muted hover:text-ink"}`}>{label}</button>
@@ -296,6 +375,7 @@ export default function AccountPanel({ open, onClose, user, auth }) {
               {tab === "profile" && <Profile user={user} auth={auth} />}
               {tab === "security" && <><TwoStep user={user} auth={auth} /><ChangePassword /></>}
               {tab === "devices" && <Devices auth={auth} />}
+              {tab === "apps" && <ConnectedApps />}
               {tab === "data" && <YourData auth={auth} />}
             </div>
           </motion.div>

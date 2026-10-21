@@ -187,6 +187,11 @@ def export_account():
         fb = c.execute(select(db.feedback).where(db.feedback.c.user_id == uid)).all()
         atts = c.execute(select(db.attachments.c.id, db.attachments.c.message_id, db.attachments.c.mime, db.attachments.c.size,
                                 db.attachments.c.created_at).where(db.attachments.c.user_id == uid)).all()
+        links = c.execute(select(db.channel_links).where(db.channel_links.c.user_id == uid)).all()
+        subjects = c.execute(select(db.subjects).where(db.subjects.c.user_id == uid)).all()
+        plans = {p.subject_id: p for p in c.execute(select(db.study_plans).where(db.study_plans.c.user_id == uid))}
+        notes = c.execute(select(db.study_notes).where(db.study_notes.c.user_id == uid)).all()
+        doubt_rows = c.execute(select(db.doubts).where(db.doubts.c.user_id == uid)).all()
     by_conv = {}
     for m in msgs:
         by_conv.setdefault(m.conversation_id, []).append({"role": m.role, "content": m.content, "created_at": iso(m.created_at)})
@@ -201,6 +206,14 @@ def export_account():
         "reports": [{"title": r.title, "content": r.content, "created_at": iso(r.created_at)} for r in reps],
         "feedback": [{"message_id": f.message_id, "rating": f.rating} for f in fb],
         "image_attachments": [{"id": a.id, "mime": a.mime, "size": a.size, "created_at": iso(a.created_at)} for a in atts],
+        "study": [{"subject": s.name, "description": s.description, "created_at": iso(s.created_at),
+                   "plan": json.loads(plans[s.id].plan) if s.id in plans else None,
+                   "notes": [{"title": n.title, "content": n.content, "created_at": iso(n.created_at)}
+                             for n in notes if n.subject_id == s.id],
+                   "doubts": [{"question": d.question, "status": d.status, "note": d.note, "created_at": iso(d.created_at)}
+                              for d in doubt_rows if d.subject_id == s.id]} for s in subjects],
+        "connected_apps": [{"channel": lk.channel, "account": lk.display, "linked_at": iso(lk.created_at),
+                            "last_used_at": iso(lk.last_used_at)} for lk in links],
     }
     audit("account.exported")
     return Response(json.dumps(out, indent=2, ensure_ascii=False), mimetype="application/json",
@@ -221,7 +234,8 @@ def delete_user_data(c, uid):
         c.execute(delete(db.pending_actions).where(db.pending_actions.c.conversation_id.in_(cids)))
         c.execute(delete(db.conversations).where(db.conversations.c.id.in_(cids)))
     for t in (db.doc_chunks, db.documents, db.memories, db.reports, db.attachments, db.feedback, db.pending_actions,
-              db.handoffs):
+              db.handoffs, db.channel_links, db.channel_link_codes, db.channel_threads, db.subject_documents, db.study_plans,
+              db.study_notes, db.doubts, db.subjects):
         c.execute(delete(t).where(t.c.user_id == uid))
     c.execute(update(db.tool_log).where(db.tool_log.c.user_id == uid).values(user_id=None, args=None))
     c.execute(update(db.errors).where(db.errors.c.user_id == uid).values(user_id=None))

@@ -81,6 +81,7 @@ conversations = Table(
     Column("archived", Integer, nullable=False, default=0, server_default="0"),
     Column("summary", LongText, nullable=True),          # rolling summary of messages older than the context window
     Column("summary_upto", BigInteger, nullable=True),   # created_at of the last message included in the summary
+    Column("subject_id", String(36), nullable=True),     # study chat: answers only from this subject's material
     Column("created_at", BigInteger, nullable=False),
     Column("updated_at", BigInteger, nullable=False),
 )
@@ -240,6 +241,95 @@ usage = Table(
     Column("latency_ms", Integer, nullable=False, default=0),
     Column("status", String(12), nullable=False),        # ok | error
 )
+subjects = Table(               # Study mode: a subject with its syllabus and material
+    "subjects", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id"), nullable=False, index=True),
+    Column("name", String(120), nullable=False),
+    Column("description", Text, nullable=True),
+    Column("created_at", BigInteger, nullable=False),
+    Column("updated_at", BigInteger, nullable=False),
+)
+subject_documents = Table(
+    "subject_documents", md,
+    Column("subject_id", String(36), primary_key=True),
+    Column("document_id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("role", String(12), nullable=False),            # syllabus | material
+    Column("added_at", BigInteger, nullable=False),
+)
+study_plans = Table(            # one current plan per subject; days are JSON with a done flag each
+    "study_plans", md,
+    Column("id", String(36), primary_key=True),
+    Column("subject_id", String(36), nullable=False, index=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("days", Integer, nullable=False),
+    Column("minutes_per_day", Integer, nullable=False),
+    Column("plan", LongText, nullable=False),
+    Column("created_at", BigInteger, nullable=False),
+)
+study_notes = Table(
+    "study_notes", md,
+    Column("id", String(36), primary_key=True),
+    Column("subject_id", String(36), nullable=False, index=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("title", String(200), nullable=False),
+    Column("day", Integer, nullable=True),
+    Column("content", LongText, nullable=False),
+    Column("sources", LongText, nullable=True),
+    Column("created_at", BigInteger, nullable=False),
+)
+doubts = Table(                 # the open doubts index: questions the material couldn't answer, or added by the student
+    "doubts", md,
+    Column("id", String(36), primary_key=True),
+    Column("subject_id", String(36), nullable=False, index=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("question", Text, nullable=False),
+    Column("status", String(12), nullable=False, default="open"),  # open | resolved
+    Column("note", Text, nullable=True),
+    Column("origin", String(12), nullable=False, default="manual"),  # chat | manual
+    Column("conversation_id", String(36), nullable=True),
+    Column("created_at", BigInteger, nullable=False),
+    Column("resolved_at", BigInteger, nullable=True),
+)
+channel_links = Table(          # a WhatsApp number / Teams account / email address linked to one Nova user
+    "channel_links", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id"), nullable=False, index=True),
+    Column("channel", String(16), nullable=False),        # whatsapp | teams | email
+    Column("external_id", String(255), nullable=False),   # wa_id, Entra object id, or lower-case email address
+    Column("display", String(255), nullable=True),        # masked number, Teams name or address, shown in Account
+    Column("conversation_id", String(36), nullable=True),  # the rolling chat for WhatsApp and Teams
+    Column("meta", Text, nullable=True),                   # JSON: e.g. Teams serviceUrl/conversation for proactive replies
+    Column("created_at", BigInteger, nullable=False),
+    Column("last_used_at", BigInteger, nullable=True),
+)
+channel_link_codes = Table(     # one-time codes shown in Account and sent from the app to prove ownership
+    "channel_link_codes", md,
+    Column("id", String(64), primary_key=True),           # SHA-256 of channel + code; the code itself is never stored
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("channel", String(16), nullable=False),
+    Column("expires_at", BigInteger, nullable=False),
+    Column("created_at", BigInteger, nullable=False),
+)
+channel_events = Table(         # inbound message ids already handled (providers retry webhooks)
+    "channel_events", md,
+    Column("id", String(255), primary_key=True),
+    Column("created_at", BigInteger, nullable=False, index=True),
+)
+channel_threads = Table(        # email Message-IDs -> conversation, so replies continue the same chat
+    "channel_threads", md,
+    Column("id", String(255), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("conversation_id", String(36), nullable=False),
+    Column("created_at", BigInteger, nullable=False, index=True),
+)
+channel_state = Table(          # small key/value store, e.g. the email poller lease shared by all workers
+    "channel_state", md,
+    Column("key", String(64), primary_key=True),
+    Column("value", String(255), nullable=True),
+    Column("updated_at", BigInteger, nullable=False),
+)
 schema_migrations = Table(
     "schema_migrations", md,
     Column("version", Integer, primary_key=True),
@@ -249,6 +339,7 @@ schema_migrations = Table(
 Index("ix_messages_conv_created", messages.c.conversation_id, messages.c.created_at)
 Index("ix_conversations_user_updated", conversations.c.user_id, conversations.c.updated_at)
 Index("ix_usage_user_created", usage.c.user_id, usage.c.created_at)
+Index("ux_channel_links_external", channel_links.c.channel, channel_links.c.external_id, unique=True)
 
 _clock = threading.Lock()
 _last = 0

@@ -8,7 +8,7 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import db, llm, maintenance, monitor, security
+from . import channels, db, llm, maintenance, monitor, security
 from .config import DIST, ENV_PATH, settings
 from .errors import ApiError
 
@@ -54,6 +54,8 @@ def create_app(overrides=None):
                 security.enforce_rate("upload", settings.UPLOAD_RATE_LIMIT)
         if not settings.IS_TEST:
             maintenance.tick()
+            if settings.EMAIL_CHANNEL_ENABLED:
+                channels.start_background(app)  # once per process; CLI commands never start the poller
 
     @app.after_request
     def after(resp):
@@ -98,7 +100,8 @@ def create_app(overrides=None):
     from .chat_routes import bp as chat_bp
     from .conversation_routes import bp as conversation_bp
     from .data_routes import bp as data_bp
-    for bp in (auth_bp, account_bp, conversation_bp, chat_bp, data_bp, admin_bp):
+    from .study import bp as study_bp
+    for bp in (auth_bp, account_bp, conversation_bp, chat_bp, data_bp, admin_bp, channels.bp, study_bp):
         app.register_blueprint(bp)
 
     # ---- built frontend (single-server deployment)

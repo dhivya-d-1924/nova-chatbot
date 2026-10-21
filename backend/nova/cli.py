@@ -6,6 +6,7 @@
   backup         write a consistent copy of the database (SQLite) to a file
   restore        replace the SQLite database with a backup (stop the server first)
   check-config   validate settings for the current APP_ENV and exit
+  channels       show WhatsApp / Teams / email status;  channels --poll-email reads the mailbox once (for cron)
 """
 import getpass
 import uuid
@@ -84,3 +85,20 @@ def register(app):
         for e in settings.errors:
             click.echo(f"error: {e}")
         click.echo("OK" if not settings.errors else "Configuration has errors.")
+
+    @app.cli.command("channels")
+    @click.option("--poll-email", is_flag=True, help="Read and answer unread email once, then exit.")
+    def channels(poll_email):
+        """Show which chat channels are configured, or poll the email channel once."""
+        from .channels import core
+        from .channels.email_channel import poll_once
+        if poll_email:
+            if not settings.EMAIL_CHANNEL_ENABLED:
+                raise click.ClickException("The email channel is not configured (EMAIL_CHANNEL_IMAP_HOST/USER/PASSWORD).")
+            click.echo(f"Handled {poll_once()} message(s).")
+            return
+        base = settings.APP_URL or "<APP_URL>"
+        hooks = {"whatsapp": f"{base}/api/channels/whatsapp/webhook", "teams": f"{base}/api/channels/teams/messages",
+                 "email": settings.EMAIL_CHANNEL_ADDRESS}
+        for ch in core.CHANNELS:
+            click.echo(f"{core.LABELS[ch]:16} {'enabled ' if core.enabled(ch) else 'disabled'}  {hooks[ch] or ''}")

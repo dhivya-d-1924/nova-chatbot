@@ -28,7 +28,7 @@ RAG_RULES = (
 
 def conv_dict(r):
     return {"id": r.id, "title": r.title, "created_at": r.created_at, "updated_at": r.updated_at,
-            "pinned": bool(r.pinned), "archived": bool(r.archived)}
+            "pinned": bool(r.pinned), "archived": bool(r.archived), "subject_id": getattr(r, "subject_id", None)}
 
 
 def msg_dict(r):
@@ -261,3 +261,50 @@ def doc_ids_from(data, uid):
         return [r.id for r in c.execute(select(db.documents.c.id).where(db.documents.c.id.in_(ids),
                                                                         db.documents.c.user_id == uid))]
 
+
+
+# ------------------------------------------------------------------ agent approvals (shared by the web chat and channels)
+def save_pending(uid, cid, steps, msgs, queue, sources, agent):
+    """Store a paused agent run and its "waiting" message. Returns (message dict, pending id)."""
+    msg = save_message(cid, "assistant", "Waiting for your approval to continue.", None, steps)
+    pid = str(uuid.uuid4())
+    now = db.now_us()
+    expires = now + settings.APPROVAL_TTL_MINUTES * 60 * 10**6
+    with db.engine.begin() as c:
+        c.execute(insert(db.pending_actions).values(
+            id=pid, user_id=uid, conversation_id=cid, message_id=msg["id"], status="open", created_at=now,
+            expires_at=expires, state=json.dumps({"msgs": msgs, "steps": steps, "queue": queue, "sources": sources,
+                                                  "agent": agent}, default=str)))
+        for st in steps:
+            if st["status"] == "awaiting":
+                st["pending_id"] = pid
+                st["expires_at"] = expires
+        c.execute(update(db.messages).where(db.messages.c.id == msg["id"]).values(steps=json.dumps(steps)))
+    msg["steps"] = steps
+    return msg, pid
+
+
+def claim_pending(uid, pending_id, approve):
+    """Use an open approval exactly once (owner only, before it expires). Returns (row, state) with the decision applied
+    to the first queued call. Raises ApiError when it is gone, used or expired."""
+    now = db.now_us()
+    with db.engine.begin() as c:
+        p = c.execute(select(db.pending_actions).where(
+            db.pending_actions.c.id == pending_id, db.pending_actions.c.user_id == uid,
+            db.pending_actions.c.status == "open")).first()
+        if not p:
+            raise ApiError(404, "This approval request is no longer available.", "approval_gone")
+        if p.expires_at and p.expires_at < now:
+            c.execute(update(db.pending_actions).where(db.pending_actions.c.id == p.id).values(status="expired"))
+            raise ApiError(410, "This approval request expired. Ask the assistant again.", "approval_expired")
+        claimed = c.execute(update(db.pending_actions).where(db.pending_actions.c.id == p.id,
+                                                             db.pending_actions.c.status == "open").values(status="done"))
+        if claimed.rowcount != 1:  # someone (another tab or device) already used it
+            raise ApiError(404, "This approval request is no longer available.", "approval_gone")
+        c.execute(delete(db.messages).where(db.messages.c.id == p.message_id))
+    state = json.loads(p.state)
+    state["queue"][0]["decision"] = "approved" if approve else "declined"
+    for st in state["steps"]:
+        st.pop("pending_id", None)
+        st.pop("expires_at", None)
+    return p, state

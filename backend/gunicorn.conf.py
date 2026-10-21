@@ -11,4 +11,5 @@ keepalive = 5
 accesslog = "-"
 errorlog = "-"
 forwarded_allow_ips = os.getenv("FORWARDED_ALLOW_IPS", "127.0.0.1")
+control_socket_disable = True       # gunicorn 26 control socket is not used and its default path is not writable in Docker
 limit_request_line = 8190

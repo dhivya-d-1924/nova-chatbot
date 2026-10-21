@@ -13,13 +13,16 @@ class MailNotConfigured(RuntimeError):
     pass
 
 
-def smtp_send(to, subject, body):
+def smtp_send(to, subject, body, from_addr=None, headers=None):
+    """Send a plain-text email. headers adds extra header lines (e.g. In-Reply-To for threaded replies)."""
     if not settings.SMTP_HOST:
         raise MailNotConfigured("SMTP_HOST is not set")
     msg = EmailMessage()
-    msg["Subject"] = subject.replace("\n", " ")[:200]
-    msg["From"] = settings.SMTP_FROM
+    msg["Subject"] = subject.replace("\n", " ").replace("\r", " ")[:200]
+    msg["From"] = from_addr or settings.SMTP_FROM
     msg["To"] = to
+    for k, v in (headers or {}).items():
+        msg[k] = str(v).replace("\n", " ").replace("\r", " ")
     msg.set_content(body)
     ctx = ssl.create_default_context()
     if settings.SMTP_TLS == "ssl":

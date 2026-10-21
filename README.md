@@ -7,6 +7,7 @@ Works with any OpenAI-compatible provider (OpenAI, Gemini, OpenRouter, Groq, Tog
 - **Upgrading from the previous version?** Read [UPGRADE NOTES](#upgrading-from-the-previous-version) below.
 - **Deploying?** See [DEPLOYMENT.md](DEPLOYMENT.md). **Security model:** [SECURITY.md](SECURITY.md).
 - **What changed and why:** [AUDIT.md](AUDIT.md).
+- **WhatsApp, Microsoft Teams and email:** [CHANNELS.md](CHANNELS.md).
 
 ## Requirements
 Node 18+ (20 recommended) and Python 3.10+. Optional: Redis (shared rate limits with several workers), MySQL,
@@ -40,7 +41,7 @@ needs HTTPS (or localhost) on most mobile browsers.
 
 ## Tests
 ```bash
-cd backend && pytest -q                    # 126 API, security, agent, RAG, migration and ops tests
+cd backend && pytest -q                    # 160 API, security, agent, RAG, study, channel, migration and ops tests
 cd frontend && npm test                    # unit/component tests (Vitest + Testing Library)
 cd frontend && E2E_PYTHON=../backend/.venv/bin/python npm run test:e2e   # Playwright end-to-end
 ```
@@ -71,6 +72,16 @@ file name are versioned. Documents are private to their owner at upload, retriev
 approval, single-use, expires), read-only business database (admins). Specialist agents (research, coding, data) and
 automatic delegation. Bounded by step, tool-time and total-time limits; tool output is treated as untrusted data.
 
+**Study mode** – create a subject, add the syllabus and study material, and get a day-by-day study plan (5 days by
+default, up to 14) with topics, goals and tasks you can tick off. Generate study material for any topic or plan day
+(notes, key terms, revision list, practice questions with answers, all cited). The subject tutor chat answers **only
+from that subject's material**: off-topic or uncovered questions are not sent to the AI and go into the **open doubts
+index**, where you can resolve them with a note.
+
+**WhatsApp, Teams and email** – staff link their own accounts (Account → Apps) and chat with the same assistant
+from WhatsApp (Meta Cloud API), a 1:1 Teams chat (Azure Bot) or a dedicated mailbox. Provider signatures are verified,
+approvals work with YES/NO, and `docs <question>` searches your documents. Setup: [CHANNELS.md](CHANNELS.md).
+
 **Images, voice, memory** – attach/paste/drop images; dictate and listen in 12 languages (browser speech APIs); opt-in
 memory you can view and delete.
 
@@ -93,6 +104,7 @@ placeholders. The most important:
 | `SMTP_*`, `REQUIRE_EMAIL_VERIFICATION` | Email for verification and reset links. |
 | `DAILY_TOKEN_LIMIT_PER_USER`, `MONTHLY_BUDGET_USD`, `LLM_PRICE_*` | Cost controls and cost estimates. |
 | `EMBEDDING_MODEL`, `OCR_ENABLED` | Semantic search; OCR for scans. |
+| `WHATSAPP_*`, `TEAMS_*`, `EMAIL_CHANNEL_*` | WhatsApp, Microsoft Teams and email channels (see CHANNELS.md). |
 
 ## API (summary)
 All endpoints are under `/api`, return JSON errors as `{"error": "...", "code": "..."}`, and (except sign-in, health and
@@ -107,6 +119,8 @@ public config) need the session cookie; state-changing requests also need the `X
 | Conversations | `GET/POST /conversations` (`?q=`, `?archived=1`), `GET/PATCH/DELETE /conversations/<id>`, `DELETE /conversations/<id>/messages`, `GET /conversations/<id>/export?format=md|json`, `GET /search?q=` |
 | Chat | `POST /chat/stream` (SSE: `user`, `delta`, `step`, `done`, `error`; `: ping` heartbeats), `POST /chat`, `POST /chat/resume`, `GET /tools`, `POST /messages/<id>/feedback` |
 | Documents | `GET/POST /documents`, `GET /documents/config`, `DELETE /documents/<id>`, `POST /documents/<id>/reindex` |
+| Study | `GET/POST /subjects`, `GET/PATCH/DELETE /subjects/<id>`, `POST/DELETE /subjects/<id>/documents[/<doc>]`, `POST /subjects/<id>/plan`, `PATCH /subjects/<id>/plan/days/<n>`, `GET/POST /subjects/<id>/notes`, `GET/DELETE /subjects/<id>/notes/<note>`, `POST /subjects/<id>/chat`, `GET /doubts`, `POST /subjects/<id>/doubts`, `PATCH/DELETE /doubts/<id>` |
+| Channels | `GET /channels`, `POST /channels/<whatsapp|teams|email>/link-code`, `DELETE /channels/links/<id>`; webhooks `GET/POST /channels/whatsapp/webhook`, `POST /channels/teams/messages`; `GET /admin/channels` |
 | Other | `POST/GET/DELETE /attachments[/<id>]`, `GET/PUT/POST/DELETE /memory…`, `GET /reports[/<id>]`, `GET/POST /handoffs` |
 | Admin | `GET /admin/stats`, `/admin/usage`, `/admin/users`, `/admin/handoffs`, `/admin/audit`, `/admin/errors`, `/admin/evals…`; `PATCH /admin/users/<id>`, `POST /admin/users/<id>/revoke-sessions`, `POST /admin/handoffs/<id>/resolve` |
 

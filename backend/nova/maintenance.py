@@ -27,6 +27,9 @@ def run_maintenance():
         for name, t in (("errors", db.errors), ("tool_log", db.tool_log), ("audit_log", db.audit_log), ("usage", db.usage)):
             out[name] = c.execute(delete(t).where(t.c.created_at < cutoff)).rowcount
         out["eval_runs"] = c.execute(delete(db.eval_runs).where(db.eval_runs.c.created_at < cutoff)).rowcount
+        out["link_codes"] = c.execute(delete(db.channel_link_codes).where(db.channel_link_codes.c.expires_at < now)).rowcount
+        out["channel_events"] = c.execute(delete(db.channel_events).where(
+            db.channel_events.c.created_at < now - 7 * DAY_US)).rowcount
     if settings.CHAT_RETENTION_DAYS:
         from .chat import delete_messages
         cutoff = now - settings.CHAT_RETENTION_DAYS * DAY_US

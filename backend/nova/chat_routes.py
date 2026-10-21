@@ -1,16 +1,25 @@
 """Chat endpoints: streaming (SSE), non-streaming, agent approvals, tools list and feedback."""
 import json
+import logging
 import queue
 import threading
-import uuid
 
 from flask import Blueprint, Response, g, jsonify, request, stream_with_context
 from openai import APIStatusError
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, select
 
 from . import agent as ag
-from . import db, llm
-from .chat import build_messages, cited_sources, doc_ids_from, maybe_summarize, prepare_turn, save_message
+from . import db, llm, study
+from .chat import (
+    build_messages,
+    cited_sources,
+    claim_pending,
+    doc_ids_from,
+    maybe_summarize,
+    prepare_turn,
+    save_message,
+    save_pending,
+)
 from .config import settings
 from .errors import ApiError
 from .monitor import log_error
@@ -18,6 +27,7 @@ from .security import audit, auth, enforce_rate
 from .validation import Bool, Int, Str, parse
 
 bp = Blueprint("chat", __name__, url_prefix="/api")
+log = logging.getLogger("nova.chat")
 HEARTBEAT_SECONDS = 15
 
 
@@ -44,6 +54,24 @@ def plain_events(msgs, ctx):
     finally:
         gen.close()  # stops reading from the provider when the user cancels
     return {"paused": False, "text": "".join(out)}
+
+
+def canned_events(text):
+    """A fixed reply in the same event shape (used when study mode must not call the AI)."""
+    yield {"type": "delta", "text": text}
+    return {"paused": False, "text": text}
+
+
+def _study_turn(ctx, conv, history):
+    """Restricted study chat: subject material only, no tools. Returns (event generator, sources, after-save hook)."""
+    summary = maybe_summarize(conv, history, ctx)
+    msgs, sources, canned = study.prepare_study_turn(conv, history, summary)
+    question = history[-1]["content"]
+    if canned:
+        if "open doubts" in canned:
+            study.add_doubt(ctx["uid"], conv.subject_id, question, origin="chat", conversation_id=conv.id)
+        return canned_events(canned), [], None, canned
+    return plain_events(msgs, ctx), sources, (lambda text: study.after_study_reply(conv, question, text)), msgs
 
 
 def pump(gen, ctx, acc):
@@ -82,8 +110,9 @@ def pump(gen, ctx, acc):
             raise val
 
 
-def stream_response(ctx, gen, steps, sources, msgs=None, agent=None, release=None, user_msg=None):
-    """SSE response: streams steps/text, then saves the reply, a pending approval, or a marked partial reply."""
+def stream_response(ctx, gen, steps, sources, msgs=None, agent=None, release=None, user_msg=None, on_saved=None):
+    """SSE response: streams steps/text, then saves the reply, a pending approval, or a marked partial reply.
+    on_saved(text) runs after a complete reply is stored (study mode uses it to record open doubts)."""
     uid, cid = ctx["uid"], ctx["cid"]
     acc = []
 
@@ -93,21 +122,7 @@ def stream_response(ctx, gen, steps, sources, msgs=None, agent=None, release=Non
                 yield sse({"type": "user", "message": user_msg})  # the stored question's real id
             result = yield from pump(gen, ctx, acc)
             if result.get("paused"):
-                msg = save_message(cid, "assistant", "Waiting for your approval to continue.", None, steps)
-                pid = str(uuid.uuid4())
-                now = db.now_us()
-                with db.engine.begin() as c:
-                    c.execute(insert(db.pending_actions).values(
-                        id=pid, user_id=uid, conversation_id=cid, message_id=msg["id"], status="open", created_at=now,
-                        expires_at=now + settings.APPROVAL_TTL_MINUTES * 60 * 10**6,
-                        state=json.dumps({"msgs": msgs, "steps": steps, "queue": result["queue"], "sources": sources,
-                                          "agent": agent}, default=str)))
-                    for st in steps:
-                        if st["status"] == "awaiting":
-                            st["pending_id"] = pid
-                            st["expires_at"] = now + settings.APPROVAL_TTL_MINUTES * 60 * 10**6
-                    c.execute(update(db.messages).where(db.messages.c.id == msg["id"]).values(steps=json.dumps(steps)))
-                msg["steps"] = steps
+                msg, _ = save_pending(uid, cid, steps, msgs, result["queue"], sources, agent)
                 yield sse({"type": "done", "message": msg})
                 return
             text = result.get("text") or ""
@@ -118,7 +133,13 @@ def stream_response(ctx, gen, steps, sources, msgs=None, agent=None, release=Non
                 text = next((s["summary"] for s in reversed(steps) if s.get("summary")), "") or \
                     "I couldn't produce a reply. Please try again."
                 yield sse({"type": "delta", "text": text})
-            yield sse({"type": "done", "message": save_message(cid, "assistant", text, cited_sources(text, sources), steps)})
+            saved = save_message(cid, "assistant", text, cited_sources(text, sources), steps)
+            if on_saved:
+                try:
+                    on_saved(text)
+                except Exception:  # noqa: BLE001  never lose the reply because of a follow-up step
+                    log.exception("after-reply hook failed")
+            yield sse({"type": "done", "message": saved})
         except GeneratorExit:  # the user pressed Stop or the connection dropped: keep what was generated
             ctx["cancel"].set()
             text = "".join(acc)
@@ -187,6 +208,9 @@ def chat_stream():
     try:
         cid, history, conv, user_msg = prepare_turn(data)
         ctx = agent_ctx(cid)
+        if conv.subject_id:
+            gen, sources, hook, _ = _study_turn(ctx, conv, history)
+            return stream_response(ctx, gen, [], sources, release=release, user_msg=user_msg, on_saved=hook)
         agent = ag.resolve_agent(ctx, data.get("agent"))
         summary = maybe_summarize(conv, history, ctx)
         llm_messages, sources = build_messages(history, g.user.id, doc_ids_from(data, g.user.id),
@@ -216,8 +240,15 @@ def chat():
     try:
         cid, history, conv, _ = prepare_turn(data)
         ctx = agent_ctx(cid)
-        summary = maybe_summarize(conv, history, ctx)
-        llm_messages, sources = build_messages(history, g.user.id, doc_ids_from(data, g.user.id), "", summary)
+        hook = None
+        if conv.subject_id:
+            _, sources, hook, payload = _study_turn(ctx, conv, history)
+            if isinstance(payload, str):  # canned reply: the AI is not called
+                return jsonify(message=save_message(cid, "assistant", payload, None))
+            llm_messages = payload
+        else:
+            summary = maybe_summarize(conv, history, ctx)
+            llm_messages, sources = build_messages(history, g.user.id, doc_ids_from(data, g.user.id), "", summary)
         try:
             text = llm.complete(llm_messages, ctx).content or ""
         except Exception as e:  # noqa: BLE001
@@ -226,7 +257,10 @@ def chat():
             raise ApiError(502, msg, "provider_error")
         if not text.strip():
             raise ApiError(502, "The AI returned an empty reply. Try again.", "empty_reply")
-        return jsonify(message=save_message(cid, "assistant", text, cited_sources(text, sources)))
+        saved = save_message(cid, "assistant", text, cited_sources(text, sources))
+        if hook:
+            hook(text)
+        return jsonify(message=saved)
     finally:
         release()
 
@@ -238,32 +272,12 @@ def chat_resume():
     d = parse(request, {"pending_id": Str(max=64, required=True), "approve": Bool(default=False)})
     llm.client()
     llm.check_quota(g.user.id)
-    now = db.now_us()
-    with db.engine.begin() as c:
-        p = c.execute(select(db.pending_actions).where(
-            db.pending_actions.c.id == d["pending_id"], db.pending_actions.c.user_id == g.user.id,
-            db.pending_actions.c.status == "open")).first()
-        if not p:
-            raise ApiError(404, "This approval request is no longer available.", "approval_gone")
-        if p.expires_at and p.expires_at < now:
-            c.execute(update(db.pending_actions).where(db.pending_actions.c.id == p.id).values(status="expired"))
-            raise ApiError(410, "This approval request expired. Ask the assistant again.", "approval_expired")
-        claimed = c.execute(update(db.pending_actions).where(db.pending_actions.c.id == p.id,
-                                                             db.pending_actions.c.status == "open").values(status="done"))
-        if claimed.rowcount != 1:  # someone (another tab) already used it
-            raise ApiError(404, "This approval request is no longer available.", "approval_gone")
-        c.execute(delete(db.messages).where(db.messages.c.id == p.message_id))
-    state = json.loads(p.state)
+    p, state = claim_pending(g.user.id, d["pending_id"], d["approve"])
     release = _slot(g.user.id)
     try:
         ctx = agent_ctx(p.conversation_id)
         queue_ = state["queue"]
-        queue_[0]["decision"] = "approved" if d["approve"] else "declined"
-        step = queue_[0]
-        audit("agent.action_" + ("approved" if d["approve"] else "declined"), target_type="tool", target_id=step["name"])
-        for st in state["steps"]:
-            st.pop("pending_id", None)
-            st.pop("expires_at", None)
+        audit("agent.action_" + ("approved" if d["approve"] else "declined"), target_type="tool", target_id=queue_[0]["name"])
         agent = state.get("agent") or None
         defs = ag.tool_defs(ctx, agent)  # permissions are re-checked now, not taken from the stored state
         return stream_response(ctx, ag.agent_events(ctx, state["msgs"], state["steps"], defs, queue_), state["steps"],

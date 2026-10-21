@@ -10,6 +10,7 @@ import ConfirmModal from "./components/ConfirmModal";
 import DocumentsPanel from "./components/DocumentsPanel";
 import MemoryPanel from "./components/MemoryPanel";
 import Sidebar from "./components/Sidebar";
+import StudyPanel from "./components/StudyPanel";
 import { useAuth } from "./hooks/useAuth";
 import { useChat } from "./hooks/useChat";
 import { useDocuments } from "./hooks/useDocuments";
@@ -31,6 +32,7 @@ function ChatApp({ user, auth }) {
   const [docsOpen, setDocsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [study, setStudy] = useState(null); // null = closed, {} = subject list, { id, tab } = a subject
   const [health, setHealth] = useState(null);
   const [view, setView] = useState("chat"); // chat | admin
   const [menuOpen, setMenuOpen] = useState(false);
@@ -93,6 +95,7 @@ function ChatApp({ user, auth }) {
                 onAdmin={() => { setView("admin"); setMenuOpen(false); }}
                 onMemory={() => { setMemoryOpen(true); setMenuOpen(false); }}
                 onAccount={() => { setAccountOpen(true); setMenuOpen(false); }}
+                onStudy={() => { setStudy({}); setMenuOpen(false); }}
               />
               {view === "admin" && user.role === "admin" ? (
                 <AdminDashboard me={user} onBack={() => setView("chat")} onOpenMenu={() => setMenuOpen(true)} />
@@ -107,6 +110,7 @@ function ChatApp({ user, auth }) {
                   onOpenMenu={() => setMenuOpen(true)}
                   onMinimize={() => setMinimized(true)}
                   onRequestClear={() => setConfirm({ type: "clear" })}
+                  onOpenStudy={(id) => setStudy(id ? { id } : {})}
                 />
               )}
             </motion.div>
@@ -131,6 +135,8 @@ function ChatApp({ user, auth }) {
 
       <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} onChanged={tools.reload} />
       <DocumentsPanel open={docsOpen} onClose={() => setDocsOpen(false)} docs={docs} />
+      <StudyPanel open={!!study} target={study} onClose={() => setStudy(null)}
+        onOpenChat={async (conv) => { setStudy(null); setView("chat"); await chat.refreshList(); chat.selectConversation(conv.id); }} />
       <AccountPanel open={accountOpen} onClose={() => setAccountOpen(false)} user={user} auth={auth} />
 
       <ConfirmModal

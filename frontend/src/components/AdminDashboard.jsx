@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Activity, AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Coins, Gauge, Headset, LayoutGrid, Menu,
-  MessageSquare, MessagesSquare, RefreshCw, Search, ThumbsDown, ThumbsUp, Users,
+  MessageSquare, MessagesSquare, Plug, RefreshCw, Search, ThumbsDown, ThumbsUp, Users,
 } from "lucide-react";
 import EvalPanel from "./EvalPanel";
 import IconButton from "./IconButton";
@@ -18,7 +18,8 @@ const money = (n) => `$${(n ?? 0).toFixed((n ?? 0) < 1 ? 4 : 2)}`;
 const field = "min-h-11 rounded-xl border border-line/15 bg-ink/5 px-3 text-base focus:border-accent focus:outline-none sm:text-sm";
 const TABS = [
   ["overview", "Overview", LayoutGrid], ["users", "Users", Users], ["support", "Support", Headset], ["usage", "Usage", Gauge],
-  ["audit", "Audit log", ClipboardList], ["errors", "Errors", AlertTriangle], ["evals", "Evaluation", Activity],
+  ["channels", "Channels", Plug], ["audit", "Audit log", ClipboardList], ["errors", "Errors", AlertTriangle],
+  ["evals", "Evaluation", Activity],
 ];
 
 function Stat({ icon: Icon, label, value, hint }) {
@@ -155,6 +156,33 @@ function Overview() {
                   {t.duration_ms != null && <span className="text-muted"> · {(t.duration_ms / 1000).toFixed(1)} s</span>}</p>
                 <p className="break-all text-xs text-muted">{t.args}</p>
                 <p className="text-xs text-muted">{t.user} · {fmt(t.created_at)}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ channels
+function ChannelsTab() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => { api.adminChannels().then((d) => setData(d.channels)).catch((e) => setError(e.message)); }, []);
+  return (
+    <div className="space-y-4">
+      <ErrorBox error={error} />
+      <Card title="WhatsApp, Teams and email">
+        <p className="mb-3 text-sm text-muted">Staff link their own accounts under Account &gt; Apps. Setup steps are in CHANNELS.md.</p>
+        {!data ? <div className="h-24 animate-pulse rounded-xl bg-ink/10" aria-busy="true" /> : (
+          <ul className="space-y-3">
+            {data.map((c) => (
+              <li key={c.id} className="rounded-xl border border-line/10 p-3 text-sm">
+                <p className="flex flex-wrap items-center gap-2 font-medium">{c.label}
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${c.enabled ? "bg-emerald-500/15 text-emerald-400" : "bg-ink/10 text-muted"}`}>{c.enabled ? "Enabled" : "Not configured"}</span></p>
+                <p className="text-xs text-muted">{num(c.users)} user(s) · {num(c.links)} linked account(s)</p>
+                {c.endpoint && <p className="mt-1 break-all font-mono text-xs text-muted">{c.id === "email" ? "Mailbox: " : "Webhook: "}{c.endpoint}</p>}
               </li>
             ))}
           </ul>
@@ -471,6 +499,7 @@ export default function AdminDashboard({ me, onBack, onOpenMenu }) {
         {tab === "users" && <UsersTab me={me} />}
         {tab === "support" && <SupportTab />}
         {tab === "usage" && <UsageTab />}
+        {tab === "channels" && <ChannelsTab />}
         {tab === "audit" && <AuditTab />}
         {tab === "errors" && <ErrorsTab />}
         {tab === "evals" && <EvalPanel />}

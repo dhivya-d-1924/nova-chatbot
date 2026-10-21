@@ -235,6 +235,57 @@ class Settings:
         if self.ALERT_WEBHOOK_URL and not _is_http_url(self.ALERT_WEBHOOK_URL):
             self.errors.append("ALERT_WEBHOOK_URL must be an http(s) URL.")
 
+        # --- channels: WhatsApp, Microsoft Teams, email (each turns on when its credentials are set)
+        self.CHANNEL_LINK_CODE_MINUTES = self._int("CHANNEL_LINK_CODE_MINUTES", 10, 1, 120)
+        self.CHANNEL_DOCUMENTS = self._str("CHANNEL_DOCUMENTS", "command").lower()  # command ("docs ..."), always, off
+        if self.CHANNEL_DOCUMENTS not in ("command", "always", "off"):
+            self.errors.append("CHANNEL_DOCUMENTS must be command, always or off.")
+            self.CHANNEL_DOCUMENTS = "command"
+        self.CHANNEL_RATE_LIMIT = self._int("CHANNEL_RATE_LIMIT_PER_MINUTE", 10, 1, 1000)
+        wa = {k: self._str(k) for k in ("WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_APP_SECRET",
+                                       "WHATSAPP_VERIFY_TOKEN")}
+        self.WHATSAPP_ACCESS_TOKEN = wa["WHATSAPP_ACCESS_TOKEN"]
+        self.WHATSAPP_PHONE_NUMBER_ID = wa["WHATSAPP_PHONE_NUMBER_ID"]
+        self.WHATSAPP_APP_SECRET = wa["WHATSAPP_APP_SECRET"]
+        self.WHATSAPP_VERIFY_TOKEN = wa["WHATSAPP_VERIFY_TOKEN"]
+        self.WHATSAPP_API_VERSION = self._str("WHATSAPP_API_VERSION", "v23.0")
+        self.WHATSAPP_API_BASE = self._str("WHATSAPP_API_BASE", "https://graph.facebook.com").rstrip("/")
+        self.WHATSAPP_DISPLAY_NUMBER = self._str("WHATSAPP_DISPLAY_NUMBER")
+        self.WHATSAPP_ENABLED = all(wa.values())
+        if any(wa.values()) and not self.WHATSAPP_ENABLED:
+            missing = ", ".join(k for k, v in wa.items() if not v)
+            (self.errors if prod else self.warnings).append(f"WhatsApp is partly configured; also set {missing}.")
+        if self.WHATSAPP_VERIFY_TOKEN and len(self.WHATSAPP_VERIFY_TOKEN) < 16:
+            self.errors.append("WHATSAPP_VERIFY_TOKEN must be at least 16 random characters.")
+
+        self.TEAMS_APP_ID = self._str("TEAMS_APP_ID")
+        self.TEAMS_APP_PASSWORD = self._raw("TEAMS_APP_PASSWORD", "").strip()
+        self.TEAMS_TENANT_ID = self._str("TEAMS_TENANT_ID")
+        self.TEAMS_BOT_NAME = self._str("TEAMS_BOT_NAME", "Nova")
+        self.TEAMS_ENABLED = bool(self.TEAMS_APP_ID and self.TEAMS_APP_PASSWORD)
+        if bool(self.TEAMS_APP_ID) != bool(self.TEAMS_APP_PASSWORD):
+            (self.errors if prod else self.warnings).append("Teams needs both TEAMS_APP_ID and TEAMS_APP_PASSWORD.")
+        if prod and self.TEAMS_ENABLED and not self.TEAMS_TENANT_ID:
+            self.errors.append("TEAMS_TENANT_ID must be set in production so only your organisation can use the bot.")
+
+        self.EMAIL_CHANNEL_IMAP_HOST = self._str("EMAIL_CHANNEL_IMAP_HOST")
+        self.EMAIL_CHANNEL_IMAP_PORT = self._int("EMAIL_CHANNEL_IMAP_PORT", 993, 1, 65535)
+        self.EMAIL_CHANNEL_USER = self._str("EMAIL_CHANNEL_USER")
+        self.EMAIL_CHANNEL_PASSWORD = self._raw("EMAIL_CHANNEL_PASSWORD", "")
+        self.EMAIL_CHANNEL_ADDRESS = (self._str("EMAIL_CHANNEL_ADDRESS") or self.EMAIL_CHANNEL_USER).lower()
+        self.EMAIL_CHANNEL_NAME = self._str("EMAIL_CHANNEL_NAME", "Nova")
+        self.EMAIL_CHANNEL_FOLDER = self._str("EMAIL_CHANNEL_FOLDER", "INBOX")
+        self.EMAIL_CHANNEL_POLL_SECONDS = self._int("EMAIL_CHANNEL_POLL_SECONDS", 60, 10, 3600)
+        self.EMAIL_CHANNEL_AUTHSERV_ID = self._str("EMAIL_CHANNEL_AUTHSERV_ID").lower()
+        self.EMAIL_CHANNEL_POLLER = self._bool("EMAIL_CHANNEL_POLLER", True)
+        self.EMAIL_CHANNEL_ENABLED = bool(self.EMAIL_CHANNEL_IMAP_HOST and self.EMAIL_CHANNEL_USER and self.EMAIL_CHANNEL_PASSWORD)
+        if self.EMAIL_CHANNEL_ENABLED:
+            if not self.SMTP_HOST:
+                self.errors.append("The email channel needs SMTP_HOST to send replies.")
+            if not self.EMAIL_CHANNEL_AUTHSERV_ID:
+                self.errors.append("EMAIL_CHANNEL_AUTHSERV_ID is required (the receiving server's name in "
+                                   "Authentication-Results, e.g. mx.google.com) so forged senders are rejected.")
+
         if prod and self.LLM_API_KEY in ("sk-your-key-here", "changeme"):
             self.errors.append("LLM_API_KEY still has the placeholder value from .env.example.")
         return self
@@ -254,7 +305,8 @@ class Settings:
         return {"env": self.APP_ENV, "model": self.LLM_MODEL, "llm_configured": self.LLM_CONFIGURED,
                 "embeddings": bool(self.EMBEDDING_MODEL), "smtp": bool(self.SMTP_HOST), "redis": bool(self.REDIS_URL),
                 "email_verification": self.REQUIRE_EMAIL_VERIFICATION, "registration_open": self.REGISTRATION_OPEN,
-                "database": self.DATABASE_URL.split(":", 1)[0].split("+")[0]}
+                "database": self.DATABASE_URL.split(":", 1)[0].split("+")[0],
+                "channels": {"whatsapp": self.WHATSAPP_ENABLED, "teams": self.TEAMS_ENABLED, "email": self.EMAIL_CHANNEL_ENABLED}}
 
 
 def _is_http_url(u):

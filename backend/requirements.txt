@@ -8,6 +8,7 @@ cryptography>=42          # encrypts MFA secrets at rest
 pypdf>=4.0
 python-docx>=1.1
 Pillow>=10.0              # image documents / OCR
+PyJWT>=2.8                # verifies Microsoft Teams (Bot Framework) tokens
 gunicorn>=22.0; sys_platform != "win32"
 tzdata>=2024.1; sys_platform == "win32"
 

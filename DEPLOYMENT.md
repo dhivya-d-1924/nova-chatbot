@@ -152,6 +152,12 @@ enrolments, so set `DATA_ENCRYPTION_KEY` separately before you ever rotate `SECR
 - Uploaded files are not stored, only extracted text (documents) and images (database). Size limits:
   `MAX_UPLOAD_MB`, `MAX_IMAGE_MB`, `MAX_PDF_PAGES`.
 
+## 10a. WhatsApp, Teams and email channels
+Set the `WHATSAPP_*`, `TEAMS_*` and/or `EMAIL_CHANNEL_*` variables (step-by-step in [CHANNELS.md](CHANNELS.md)) and
+redeploy. The webhooks need your public HTTPS address; behind Caddy/nginx no extra proxy rules are needed (they are
+ordinary `POST /api/...` requests). Check with `flask --app app channels`. The email channel needs outgoing SMTP
+(not available on Render's free plan) and polls from one worker at a time.
+
 ## 11. Troubleshooting
 | Symptom | Fix |
 |---|---|

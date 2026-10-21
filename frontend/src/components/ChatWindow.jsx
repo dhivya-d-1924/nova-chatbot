@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, FileText, KeyRound, Menu, Minimize2, MoreVertical, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, FileText, KeyRound, Menu, Minimize2, MoreVertical, RefreshCw, Trash2 } from "lucide-react";
 import Avatar from "./Avatar";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
@@ -27,6 +27,27 @@ function Welcome({ onPick, disabled }) {
         ))}
       </motion.h1>
       <SuggestionCards onPick={onPick} disabled={disabled} />
+    </div>
+  );
+}
+
+const STUDY_PROMPTS = ["Explain the first topic of my syllabus simply", "Give me 5 practice questions with answers",
+  "Summarise the key points I must remember", "What are the important definitions?"];
+
+function StudyWelcome({ subject, onPick, disabled }) {
+  return (
+    <div className="flex min-h-full flex-col items-center justify-center gap-5 px-4 py-8 text-center">
+      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/15 text-accent"><BookOpen size={30} /></span>
+      <div>
+        <h1 className="font-display text-2xl font-semibold">{subject.name} tutor</h1>
+        <p className="mt-1 max-w-sm text-sm text-muted">I answer only from your {subject.name} material. Anything it doesn't cover goes to your open doubts.</p>
+      </div>
+      <div className="grid w-full max-w-lg gap-2 sm:grid-cols-2">
+        {STUDY_PROMPTS.map((p) => (
+          <button key={p} type="button" onClick={() => onPick(p)} disabled={disabled}
+            className="glass min-h-11 rounded-2xl px-4 py-3 text-left text-sm hover:bg-ink/10 disabled:opacity-50">{p}</button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -67,8 +88,9 @@ function MoreMenu({ onClear, canClear, onMinimize }) {
   );
 }
 
-export default function ChatWindow({ chat, health, online, tools, docCount, onOpenDocs, onOpenMenu, onMinimize, onRequestClear }) {
+export default function ChatWindow({ chat, health, online, tools, docCount, onOpenDocs, onOpenMenu, onMinimize, onRequestClear, onOpenStudy }) {
   const { messages, status, error, threadLoading, send, stop, regenerate, retry, rate, resolveAction, editMessage } = chat;
+  const subject = chat.activeSubject;
   const scroller = useRef(null);
   const endRef = useRef(null);
   const stick = useRef(true);
@@ -117,7 +139,8 @@ export default function ChatWindow({ chat, health, online, tools, docCount, onOp
             </p>
           </div>
         </div>
-        <span className="relative">
+        {subject && <IconButton label={`Open ${subject.name} in Study`} onClick={() => onOpenStudy?.(subject.id)}><BookOpen size={19} /></IconButton>}
+        <span className={`relative ${subject ? "hidden" : ""}`}>
           <IconButton label="Documents" onClick={onOpenDocs}><FileText size={19} /></IconButton>
           {docCount > 0 && (
             <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-white" aria-hidden="true">{docCount}</span>
@@ -141,13 +164,20 @@ export default function ChatWindow({ chat, health, online, tools, docCount, onOp
         </div>
       )}
 
+      {subject && (
+        <div className="mx-3 mb-2 flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs sm:mx-6" role="note">
+          <BookOpen size={15} className="shrink-0 text-accent" aria-hidden="true" />
+          <span className="min-w-0 flex-1"><strong>Study mode · {subject.name}</strong>: answers come only from your study material.</span>
+        </div>
+      )}
+
       <div ref={scroller} onScroll={onScroll} className="thin-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
         {threadLoading ? (
           <div className="mx-auto max-w-3xl space-y-4 p-6" aria-busy="true" aria-label="Loading conversation">
             {[0, 1, 2].map((i) => <div key={i} className={`h-16 animate-pulse rounded-2xl bg-ink/10 ${i % 2 ? "ml-auto w-2/3" : "w-3/4"}`} />)}
           </div>
         ) : empty ? (
-          <Welcome onPick={send} disabled={busy} />
+          subject ? <StudyWelcome subject={subject} onPick={send} disabled={busy} /> : <Welcome onPick={send} disabled={busy} />
         ) : (
           <div role="log" aria-live="polite" aria-relevant="additions" className="mx-auto max-w-3xl space-y-5 px-3 py-4 sm:px-6">
             {messages.map((m, i) =>
@@ -189,8 +219,8 @@ export default function ChatWindow({ chat, health, online, tools, docCount, onOp
         <div ref={endRef} />
       </div>
 
-      <ChatInput onSend={send} onStop={stop} busy={busy} focusKey={chat.activeId} docCount={docCount} onOpenDocs={onOpenDocs}
-        tools={tools} conversationId={chat.activeId} offline={!online} />
+      <ChatInput onSend={send} onStop={stop} busy={busy} focusKey={chat.activeId} docCount={subject ? 0 : docCount} onOpenDocs={onOpenDocs}
+        tools={subject ? null : tools} conversationId={chat.activeId} offline={!online} />
     </main>
   );
 }

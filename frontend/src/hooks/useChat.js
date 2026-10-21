@@ -9,6 +9,7 @@ export function useChat({ onNotice } = {}) {
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState(null);
+  const [activeSubject, setActiveSubject] = useState(null); // study chat: { id, name }
   const [messages, setMessages] = useState([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [status, setStatus] = useState("idle");
@@ -209,6 +210,7 @@ export function useChat({ onNotice } = {}) {
   const newChat = useCallback(() => {
     abortRef.current?.abort();
     setActive(null);
+    setActiveSubject(null);
     setMessages([]);
     setError(null);
     setStatus("idle");
@@ -219,6 +221,7 @@ export function useChat({ onNotice } = {}) {
     if (id === activeRef.current) return;
     abortRef.current?.abort();
     setActive(id);
+    setActiveSubject(null);
     setMessages([]);
     setError(null);
     setStatus("idle");
@@ -226,7 +229,7 @@ export function useChat({ onNotice } = {}) {
     setThreadLoading(true);
     try {
       const data = await api.getConversation(id);
-      if (activeRef.current === id) setMessages(data.messages);
+      if (activeRef.current === id) { setMessages(data.messages); setActiveSubject(data.subject || null); }
     } catch (e) {
       if (activeRef.current === id) { setError(e.message); setStatus("error"); }
     } finally {
@@ -283,7 +286,7 @@ export function useChat({ onNotice } = {}) {
   }, [refreshList]);
 
   return {
-    conversations, listLoading, listError, activeId, messages, threadLoading, status, error, showArchived, query,
+    conversations, listLoading, listError, activeId, activeSubject, messages, threadLoading, status, error, showArchived, query,
     setShowArchived, setQuery, refreshList,
     send, editMessage, regenerate, retry, stop, rate, setDocIds, setTools, setAgent, resolveAction, newChat,
     selectConversation, removeConversation, updateConversation, exportConversation, clearChat,

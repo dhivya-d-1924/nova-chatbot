@@ -40,6 +40,17 @@ def _reply_for(body):
     system = msgs[0].get("content", "") if msgs and msgs[0].get("role") == "system" else ""
     tools = {t["function"]["name"] for t in body.get("tools") or []}
     tool_msgs = [m for m in msgs if m.get("role") == "tool"]
+    if "study planner" in system:
+        n = int((re.search(r"Days: (\d+)", last) or [0, 5])[1])
+        return {"text": "Here is your plan:\n```json\n" + json.dumps({"days": [
+            {"day": i + 1, "title": f"Part {i + 1}", "topics": [f"Topic {i + 1}"], "goals": ["Understand it"],
+             "tasks": ["Read the notes", "Practise"], "minutes": 90} for i in range(n)]}) + "\n```"}
+    if "study material writer" in system:
+        return {"text": "## Overview\nPhotosynthesis turns light into energy [1].\n## Practice questions\n1. What is it? Answer: [1]"}
+    if "patient tutor" in system and "Sources:" in last:
+        if "unrelated" in last:
+            return {"text": "I couldn't find that in your documents."}
+        return {"text": "From your material: chlorophyll absorbs light [1]."}
     if "running summary" in system:
         return {"text": "SUMMARY: the user and assistant talked about earlier topics."}
     if "You grade answers" in system:

@@ -313,12 +313,15 @@ def delete_document(uid, doc_id):
                                                          db.documents.c.user_id == uid)).first():
             raise ApiError(404, "Document not found.", "not_found")
         c.execute(delete(db.doc_chunks).where(db.doc_chunks.c.document_id == doc_id, db.doc_chunks.c.user_id == uid))
+        c.execute(delete(db.subject_documents).where(db.subject_documents.c.document_id == doc_id,
+                                                     db.subject_documents.c.user_id == uid))
         c.execute(delete(db.documents).where(db.documents.c.id == doc_id, db.documents.c.user_id == uid))
 
 
 # ------------------------------------------------------------------ retrieval
-def retrieve(uid, doc_ids, query, k=None):
-    """Top-k chunks from the user's selected documents. Ownership is enforced in the query itself."""
+def retrieve(uid, doc_ids, query, k=None, strict=False):
+    """Top-k chunks from the user's selected documents. Ownership is enforced in the query itself.
+    strict=True returns only chunks that actually match the query (no sampling fallback), for study mode."""
     k = k or settings.RAG_TOP_K
     if not doc_ids:
         return []
@@ -349,6 +352,8 @@ def retrieve(uid, doc_ids, query, k=None):
         order = [i for i, _ in fused.most_common(k)]
     else:
         order = kw_rank[:k]
+    if not order and strict:
+        return []
     if not order:  # broad requests like "summarize this" share no keywords: sample across the documents
         order = list(range(0, len(rows), max(1, len(rows) // k)))[:k]
     return [rows[i] for i in order]

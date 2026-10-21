@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Archive, ArchiveRestore, Brain, Download, LayoutDashboard, LogOut, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff,
+  Archive, ArchiveRestore, BookOpen, Brain, Download, LayoutDashboard, LogOut, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff,
   Plus, Search, Trash2, UserCog, X,
 } from "lucide-react";
 import Avatar from "./Avatar";
@@ -88,7 +88,9 @@ function ConversationItem({ c, active, onSelect, chat, onDelete }) {
         className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl py-2 pl-3 pr-12 text-left text-sm transition-colors ${
           active ? "bg-accent/20 text-ink" : "text-muted hover:bg-ink/10 hover:text-ink"}`}
       >
-        {c.pinned ? <Pin size={15} className="shrink-0 text-volt" aria-hidden="true" /> : <MessageSquare size={16} className="shrink-0" aria-hidden="true" />}
+        {c.pinned ? <Pin size={15} className="shrink-0 text-volt" aria-hidden="true" />
+          : c.subject_id ? <BookOpen size={16} className="shrink-0 text-accent" aria-hidden="true" />
+            : <MessageSquare size={16} className="shrink-0" aria-hidden="true" />}
         <span className="min-w-0 flex-1">
           <span className="block truncate">{c.title}</span>
           <span className="block text-[11px] text-muted/80">{formatWhen(c.updated_at)}{c.pinned && <span className="sr-only"> · pinned</span>}</span>
@@ -115,7 +117,7 @@ function ConversationItem({ c, active, onSelect, chat, onDelete }) {
   );
 }
 
-function Panel({ chat, activeId, onSelect, onNew, onDelete, onClose, showClose, user, onLogout, onAdmin, onMemory, onAccount, view }) {
+function Panel({ chat, activeId, onSelect, onNew, onDelete, onClose, showClose, user, onLogout, onAdmin, onMemory, onAccount, onStudy, view }) {
   const [search, setSearch] = useState(chat.query);
   const debounced = useDebounced(search, 300);
   const { setQuery } = chat;
@@ -178,11 +180,14 @@ function Panel({ chat, activeId, onSelect, onNew, onDelete, onClose, showClose, 
       </nav>
 
       <div className="border-t border-line/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="mb-2 grid grid-cols-2 gap-1">
-          <button type="button" onClick={onMemory} className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-muted transition-colors hover:bg-ink/10 hover:text-ink">
+        <div className="mb-2 grid grid-cols-3 gap-1">
+          <button type="button" onClick={onStudy} className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-muted transition-colors hover:bg-ink/10 hover:text-ink">
+            <BookOpen size={16} /> Study
+          </button>
+          <button type="button" onClick={onMemory} className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-muted transition-colors hover:bg-ink/10 hover:text-ink">
             <Brain size={16} /> Memory
           </button>
-          <button type="button" onClick={onAccount} className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm text-muted transition-colors hover:bg-ink/10 hover:text-ink">
+          <button type="button" onClick={onAccount} className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-muted transition-colors hover:bg-ink/10 hover:text-ink">
             <UserCog size={16} /> Account
           </button>
         </div>

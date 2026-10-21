@@ -67,7 +67,12 @@ def _conversation_payload(c, conv):
                            .where(db.attachments.c.message_id.in_(ids), db.attachments.c.user_id == g.user.id)
                            .order_by(db.attachments.c.created_at)):
             images[r.message_id].append({"id": r.id, "mime": r.mime})
-    return {**conv_dict(conv), "messages": [
+    subject = None
+    if conv.subject_id:
+        srow = c.execute(select(db.subjects.c.id, db.subjects.c.name).where(db.subjects.c.id == conv.subject_id,
+                                                                            db.subjects.c.user_id == g.user.id)).first()
+        subject = {"id": srow.id, "name": srow.name} if srow else None
+    return {**conv_dict(conv), "subject": subject, "messages": [
         {**msg_dict(r), "rating": ratings.get(r.id, 0), "images": images.get(r.id, [])} for r in rows]}
 
 
