@@ -72,5 +72,23 @@
 - Retention: logs are deleted after `LOG_RETENTION_DAYS`; optional `CHAT_RETENTION_DAYS` for conversations.
 - Errors returned to clients never include stack traces or internal details.
 
+## Workspace agent (Gmail, Microsoft Teams, calendars)
+Security review of the workspace integrations; details in [WORKSPACE.md](WORKSPACE.md#5-security).
+
+| Risk | Control |
+|---|---|
+| Stolen or replayed sign-in | OAuth 2.0 authorization code with PKCE (S256); state is random, stored hashed, single-use, bound to the Nova user, 10-minute expiry. Microsoft tenant checked in the id_token; Google domain via `GOOGLE_ALLOWED_DOMAIN`. Nova never asks for or stores passwords. |
+| Token theft | Access and refresh tokens encrypted at rest (Fernet), never returned to the browser, the AI or logs; refreshed server-side; revoked on disconnect; a revoked grant deletes the stored tokens. |
+| Over-broad access | Delegated permissions only, as the signed-in user; least-privilege scopes listed in WORKSPACE.md; admin-consent scopes are opt-in (`MS_EXTRA_SCOPES`). Drive is read-only; Gmail uses `gmail.modify` (no permanent delete). |
+| Cross-user leakage | Every query is filtered by the session's user id; tokens are per user; approvals, items and drafts of another user return 404. Covered by tests. |
+| Prompt injection in mail, chats, attachments | Content is passed to the model as untrusted data with explicit rules; the agent cannot send anything without the user's approval in chat or the Approvals center; recipients come only from the user; model output is validated (ids, categories, recipients) before use. |
+| Unwanted or duplicate sends | Anything others see is high risk and always needs approval (preview shows recipients, text, attachments, destination); approvals are single-use; identical sends within 24 h are refused, also on Retry; only provider-confirmed results are reported as sent. |
+| Abuse and quotas | Per-user rate limits on search, AI features and approvals; provider throttling handled with back-off. |
+| Data retention | Workspace history, notifications and finished drafts expire after `WORKSPACE_RETENTION_DAYS`; account deletion removes all workspace data. |
+| Demo mode in production | `WORKSPACE_DEMO` is refused when `APP_ENV=production`. |
+
+Residual risks: a person can still approve a bad draft (the preview is the safeguard); provider-side sharing settings
+decide what free/busy and search can see; AI summaries can be wrong, so facts and suggestions are labelled separately.
+
 ## Reporting
 Please report vulnerabilities privately to the maintainers rather than in a public issue.

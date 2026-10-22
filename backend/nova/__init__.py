@@ -56,6 +56,9 @@ def create_app(overrides=None):
             maintenance.tick()
             if settings.EMAIL_CHANNEL_ENABLED:
                 channels.start_background(app)  # once per process; CLI commands never start the poller
+            if settings.WORKSPACE_JOBS:
+                from .workspace import jobs as workspace_jobs
+                workspace_jobs.start(app)  # once per process; job rows are leased, so several workers are safe
 
     @app.after_request
     def after(resp):
@@ -102,8 +105,12 @@ def create_app(overrides=None):
     from .data_routes import bp as data_bp
     from .integrations import bp as integrations_bp
     from .study import bp as study_bp
-    for bp in (auth_bp, account_bp, conversation_bp, chat_bp, data_bp, admin_bp, channels.bp, study_bp, integrations_bp):
+    from .workspace import bp as workspace_bp
+    for bp in (auth_bp, account_bp, conversation_bp, chat_bp, data_bp, admin_bp, channels.bp, study_bp, integrations_bp, workspace_bp):
         app.register_blueprint(bp)
+    if settings.WORKSPACE_DEMO:
+        from .workspace import demo
+        demo.install(f"you@{settings.GOOGLE_ALLOWED_DOMAIN or 'demo.example'}", settings.MS_TENANT_ID)
 
     # ---- built frontend (single-server deployment)
     def _index():

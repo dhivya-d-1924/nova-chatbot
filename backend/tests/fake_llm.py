@@ -41,6 +41,40 @@ def _reply_for(body):
     system = msgs[0].get("content", "") if msgs and msgs[0].get("role") == "system" else ""
     tools = {t["function"]["name"] for t in body.get("tools") or []}
     tool_msgs = [m for m in msgs if m.get("role") == "tool"]
+    if "decide whether it is about someone being absent" in system:
+        body = last.split("<untrusted>")[-1].lower()
+        dates = re.findall(r"\d{4}-\d{2}-\d{2}", body)
+        sender = re.search(r"sender: ([^<\n]*)<([^>]+)>", last.lower())
+        if not dates or not any(w in body for w in ("leave", "sick", "vacation", "out of office")):
+            return {"text": '{"absence": false}'}
+        kind = "approved" if "approved" in body else ("request" if "request" in body else "announcement")
+        return {"text": json.dumps({"absence": True, "person_name": (sender.group(1).strip().title() if sender else ""),
+                                    "person_email": sender.group(2) if sender else "", "kind": kind,
+                                    "start_date": dates[0], "end_date": dates[-1]})}
+    content = last.split("<untrusted>")[-1].split("</untrusted>")[0]
+    if "Classify each email" in system:       # workspace email triage
+        out = []
+        for i, line in re.findall(r"^\[(\d+)\] (.*)$", content, re.M):
+            low = line.lower()
+            cat = "urgent" if "urgent" in low else "low" if "no-reply" in low else "needs_reply" if "?" in line else "fyi"
+            out.append({"i": int(i), "category": cat, "reason": f"fake {cat}"})
+        return {"text": json.dumps(out)}
+    if "Extract concrete action items" in system:   # action items from email/Teams
+        items = []
+        for i, block in re.findall(r"### SOURCE (\d+)\n(.*?)(?=### SOURCE|\Z)", content, re.S):
+            for sentence in re.findall(r"(?:Can|Could) you ([^?]+)\?", block):
+                due = "2026-10-23" if "friday" in sentence.lower() else ""
+                owner = "Ravi" if "Ravi will own" in block else ""
+                items.append({"source": int(i), "title": sentence.strip().capitalize()[:80], "owner": owner, "due": due})
+        items.append({"source": 999, "title": "out of range is ignored"})
+        return {"text": json.dumps(items)}
+    if "professional email" in system or "short Teams update" in system:   # cross-platform drafts
+        subject = (re.search(r"Subject: (.*)", content) or [None, "Teams discussion"])[1].strip()
+        gist = re.sub(r"\s+", " ", content.split("\n\n", 1)[-1])[:160]
+        extra = {"to": "attacker@evil.example"} if "attacker" in content else {}   # the model can't add recipients
+        if "professional email" in system:
+            return {"text": json.dumps({"subject": f"Re: {subject}", "body": f"Hello,\n\nSummary: {gist}\n\nThanks", **extra})}
+        return {"text": json.dumps({"text": f"Update from email “{subject}”: {gist}", **extra})}
     if "study planner" in system:
         n = int((re.search(r"Days: (\d+)", last) or [0, 5])[1])
         return {"text": "Here is your plan:\n```json\n" + json.dumps({"days": [

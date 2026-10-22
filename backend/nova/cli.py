@@ -6,6 +6,8 @@
   backup         write a consistent copy of the database (SQLite) to a file
   restore        replace the SQLite database with a backup (stop the server first)
   check-config   validate settings for the current APP_ENV and exit
+  schema-sql     print the database schema as SQL for a dialect (reference / DBA review; `migrate` applies it)
+  workspace-jobs run due workspace jobs once (for cron, when WORKSPACE_JOBS=false)
   channels       show WhatsApp / Teams / email status;  channels --poll-email reads the mailbox once (for cron)
 """
 import getpass
@@ -55,6 +57,12 @@ def register(app):
         out = db.migrate()
         click.echo(f"Schema version {db.schema_version()} ({out})")
 
+    @app.cli.command("schema-sql")
+    @click.option("--dialect", type=click.Choice(["postgresql", "mysql", "sqlite"]), default="postgresql")
+    def schema_sql(dialect):
+        """Print CREATE TABLE / CREATE INDEX statements for the whole schema."""
+        click.echo(db.schema_sql(dialect))
+
     @app.cli.command("maintenance")
     def maintenance():
         """Delete expired sessions, approvals and data past the retention limits."""
@@ -102,3 +110,12 @@ def register(app):
                  "email": settings.EMAIL_CHANNEL_ADDRESS}
         for ch in core.CHANNELS:
             click.echo(f"{core.LABELS[ch]:16} {'enabled ' if core.enabled(ch) else 'disabled'}  {hooks[ch] or ''}")
+
+    @app.cli.command("workspace-jobs")
+    @click.option("--run-due", is_flag=True, help="Run every job that is due now, then exit.")
+    def workspace_jobs(run_due):
+        """Run due workspace jobs (briefings, reminders, follow-ups…) once."""
+        from .workspace import jobs
+        if not run_due:
+            raise click.ClickException("Use --run-due (schedule it every minute with cron or a systemd timer).")
+        click.echo(f"Ran {jobs.run_due('cli')} job(s).")

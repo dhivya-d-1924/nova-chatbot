@@ -1,4 +1,5 @@
 """Migrations of an older database, backup/restore, health checks, maintenance, CLI and the shared limiter."""
+import os
 import shutil
 import socket
 import sqlite3
@@ -27,6 +28,10 @@ CREATE TABLE pending_actions (id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36) NO
 """
 
 
+SQLITE_ONLY = pytest.mark.skipif(bool(os.environ.get("TEST_DATABASE_URL")), reason="SQLite file upgrade/backup (PostgreSQL uses pg_dump)")
+
+
+@SQLITE_ONLY
 def test_upgrade_from_original_schema_preserves_data(tmp_path, make_app):
     from werkzeug.security import generate_password_hash
     path = tmp_path / "test.db"
@@ -54,6 +59,7 @@ def test_upgrade_from_original_schema_preserves_data(tmp_path, make_app):
     assert out["columns"] == [] and out["applied"] == []
 
 
+@SQLITE_ONLY
 def test_backup_and_restore_round_trip(tmp_path, admin):
     from nova.config import settings
     cid = admin.post("/api/conversations").json["id"]

@@ -365,6 +365,9 @@ def agent_system(msgs, ctx, defs=None):
                   "delegate_to_specialist and combine the results; do simple things yourself.")
     if "remember" in defs:
         extra += " " + MEMORY_RULES
+    if any(t.get("integration") for t in defs.values()):
+        from .workspace.tools import WORKSPACE_RULES
+        extra += " " + WORKSPACE_RULES
     first = dict(msgs[0])
     first["content"] += f"\n\n{AGENT_RULES}{extra}\nToday's date is {today} (UTC). The user's name is {ctx['name']}."
     return [first, *msgs[1:]]

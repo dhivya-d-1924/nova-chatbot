@@ -327,11 +327,11 @@ def google_callback():
     if request.args.get("error"):
         return _back("cancelled", request.args.get("error"))
     try:
-        google.check_state(request.args.get("state"), g.user.id)
+        verifier = google.check_state(request.args.get("state"), g.user.id)
         code = request.args.get("code") or ""
         if not code or len(code) > 2000:
             raise google.GoogleError("Missing authorization code.")
-        email = google.finish(g.user.id, code)
+        email = google.finish(g.user.id, code, verifier)
     except google.GoogleError as e:
         return _back("error", str(e))
     audit("integration.google_connected", target_type="provider", target_id="google")

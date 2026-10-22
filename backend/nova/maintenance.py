@@ -30,6 +30,14 @@ def run_maintenance():
         out["link_codes"] = c.execute(delete(db.channel_link_codes).where(db.channel_link_codes.c.expires_at < now)).rowcount
         out["channel_events"] = c.execute(delete(db.channel_events).where(
             db.channel_events.c.created_at < now - 7 * DAY_US)).rowcount
+        ws_cutoff = now - settings.WORKSPACE_RETENTION_DAYS * DAY_US
+        out["workspace_activity"] = c.execute(delete(db.workspace_activity).where(db.workspace_activity.c.created_at < ws_cutoff)).rowcount
+        out["notifications"] = c.execute(delete(db.notifications).where(db.notifications.c.created_at < ws_cutoff)).rowcount
+        out["workspace_drafts"] = c.execute(delete(db.workspace_drafts).where(
+            db.workspace_drafts.c.status.in_(("sent", "failed", "discarded")), db.workspace_drafts.c.created_at < ws_cutoff)).rowcount
+        out["reminders"] = c.execute(delete(db.reminders).where(
+            db.reminders.c.status != "pending", db.reminders.c.remind_at < ws_cutoff)).rowcount
+        out["oauth_states"] = c.execute(delete(db.oauth_states).where(db.oauth_states.c.expires_at < now)).rowcount
     if settings.CHAT_RETENTION_DAYS:
         from .chat import delete_messages
         cutoff = now - settings.CHAT_RETENTION_DAYS * DAY_US

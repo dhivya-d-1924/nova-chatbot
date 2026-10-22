@@ -255,7 +255,8 @@ def gws(make_app, monkeypatch):
             return {"items": [{"id": "ev1", "summary": "Team stand-up", "start": {"dateTime": "2026-10-22T09:30:00+05:30"},
                                "end": {"dateTime": "2026-10-22T09:45:00+05:30"}, "attendees": [{}, {}]}]}
         if "/calendar/v3/calendars/primary/events" in url:
-            return {"summary": data["summary"], "htmlLink": "https://calendar.google.com/event?eid=1"}
+            return {"id": "evnew1", "summary": data["summary"], "htmlLink": "https://calendar.google.com/event?eid=1",
+                    "start": data["start"], "end": data["end"], "attendees": data.get("attendees", [])}
         if "/drive/v3/files?" in url:
             return {"files": [{"id": "file12345", "name": "Leave policy", "mimeType": "application/vnd.google-apps.document"}]}
         if "/drive/v3/files/file12345/export" in url:
@@ -278,7 +279,7 @@ def connect(api):
 
 def test_google_connect_flow_and_tokens_encrypted(gws):
     api = gws["api"]
-    assert not any(t["name"].startswith("google_") for t in api.get("/api/tools").json["tools"])
+    assert not any(t["name"].startswith(("google_", "calendar_")) for t in api.get("/api/tools").json["tools"])
     r, q = connect(api)
     assert q["client_id"] == ["cid.apps.googleusercontent.com"] and q["hd"] == ["corp.example"]
     assert q["access_type"] == ["offline"] and "drive.readonly" in q["scope"][0]
@@ -290,7 +291,7 @@ def test_google_connect_flow_and_tokens_encrypted(gws):
         row = c.execute(select(db.user_connections)).first()
     assert "AT-1" not in row.access_token and "RT-1" not in row.refresh_token
     names = {t["name"] for t in api.get("/api/tools").json["tools"]}
-    assert {"google_calendar_events", "google_drive_read", "gmail_search"} <= names
+    assert {"calendar_events", "google_drive_read", "gmail_search", "email_reply"} <= names
 
 
 def test_google_state_is_bound_to_the_user(gws):
@@ -316,7 +317,7 @@ def test_google_tools_calendar_drive_and_refresh(gws):
     api = gws["api"]
     connect(api)
     cid = new_conv(api)
-    ev = tool_events(api, cid, "app google_calendar_events {}")
+    ev = tool_events(api, cid, "app calendar_events {}")
     assert "Team stand-up" in next(e for e in ev if e["type"] == "done")["message"]["content"]
     ev = tool_events(api, cid, 'app google_drive_read {"file_id": "file12345"}')
     assert "24 days of leave" in next(e for e in ev if e["type"] == "done")["message"]["content"]
@@ -324,20 +325,20 @@ def test_google_tools_calendar_drive_and_refresh(gws):
     from nova import db
     with db.engine.begin() as c:
         c.execute(db.user_connections.update().values(expires_at=0))
-    tool_events(api, cid, "app google_calendar_events {}")
+    tool_events(api, cid, "app calendar_events {}")
     assert any(u == gws["google"].TOKEN_URL and d.get("grant_type") == "refresh_token" for _, u, d in gws["calls"])
 
 
 def test_google_create_event_needs_approval(gws):
     api = gws["api"]
     connect(api)
-    ev = tool_events(api, new_conv(api), 'app google_calendar_create_event {"summary": "1:1", "start": "2026-10-23T10:00:00+05:30", '
+    ev = tool_events(api, new_conv(api), 'app calendar_create_event {"title": "1:1", "start": "2026-10-23T10:00:00+05:30", '
                                          '"end": "2026-10-23T10:30:00+05:30"}')
     step = next(e for e in ev if e["type"] == "done")["message"]["steps"][0]
     assert step["status"] == "awaiting"
     assert not any("/events" in u and m == "POST" for m, u, _ in gws["calls"])
     r, ev = api.stream({"pending_id": step["pending_id"], "approve": True}, path="/api/chat/resume")
-    assert "Event created" in next(e for e in ev if e["type"] == "done")["message"]["content"]
+    assert "Meeting created and confirmed by google" in next(e for e in ev if e["type"] == "done")["message"]["content"]
 
 
 def test_google_revoked_access_and_disconnect(gws):
@@ -347,11 +348,11 @@ def test_google_revoked_access_and_disconnect(gws):
     with db.engine.begin() as c:
         c.execute(db.user_connections.update().values(expires_at=0))
     gws["state"]["refresh_fails"] = True
-    ev = tool_events(api, new_conv(api), "app google_calendar_events {}")
+    ev = tool_events(api, new_conv(api), "app calendar_events {}")
     assert "Reconnect Google" in json.dumps(ev)
     assert not api.get("/api/integrations").json["google"]["connected"]
     gws["state"]["refresh_fails"] = False
     connect(api)
     assert api.delete("/api/integrations/google").status_code == 200
     assert any(u == gws["google"].REVOKE_URL for _, u, _ in gws["calls"])
-    assert not any(t["name"].startswith("google_") for t in api.get("/api/tools").json["tools"])
+    assert not any(t["name"].startswith(("google_", "calendar_")) for t in api.get("/api/tools").json["tools"])

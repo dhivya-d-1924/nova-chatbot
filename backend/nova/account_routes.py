@@ -238,7 +238,9 @@ def delete_user_data(c, uid):
         c.execute(delete(db.conversations).where(db.conversations.c.id.in_(cids)))
     for t in (db.doc_chunks, db.documents, db.memories, db.reports, db.attachments, db.feedback, db.pending_actions,
               db.handoffs, db.channel_links, db.channel_link_codes, db.channel_threads, db.subject_documents, db.study_plans,
-              db.study_notes, db.doubts, db.subjects, db.user_connections):
+              db.study_notes, db.doubts, db.subjects, db.user_connections, db.workspace_prefs, db.workspace_drafts,
+              db.workspace_activity, db.absences, db.ooo_settings, db.action_items, db.reminders, db.notifications, db.jobs,
+              db.oauth_states):
         c.execute(delete(t).where(t.c.user_id == uid))
     c.execute(update(db.tool_log).where(db.tool_log.c.user_id == uid).values(user_id=None, args=None))
     c.execute(update(db.errors).where(db.errors.c.user_id == uid).values(user_id=None))

@@ -23,10 +23,23 @@ os.environ.update({
     "REGISTER_RATE_LIMIT_PER_HOUR": "1000", "API_RATE_LIMIT_PER_MINUTE": "100000", "UPLOAD_RATE_LIMIT_PER_MINUTE": "1000",
     "SECRET_KEY": "e2e-" + "x" * 40, "LOG_LEVEL": "WARNING",
     "BOOTSTRAP_FIRST_ADMIN": "false", "ADMIN_EMAILS": "admin@e2e.test",
+    # Workspace tests sign in to simulated Google / Microsoft accounts (tests/fake_workspace.py); nothing leaves this machine.
+    "GOOGLE_CLIENT_ID": "e2e.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "e2e", "MS_CLIENT_ID": "e2e-ms",
+    "MS_CLIENT_SECRET": "e2e", "MS_TENANT_ID": "tenant-1", "WORKSPACE_JOBS": "false",
 })
 from nova import create_app  # noqa: E402
 from nova.config import settings  # noqa: E402
 
 app = create_app({"_SKIP_ENV_FILE": "1"})
+
+
+def _fake_workspace():
+    """Every user who connects gets the same simulated accounts (nova/workspace/demo.py): meetings around now with a
+    clash, a leave note, an urgent email with an attachment, a Teams question and a channel discussion."""
+    from nova.workspace import demo
+    demo.install("me@e2e.test")
+
+
+_fake_workspace()
 print(f"e2e server on {origin} (fake LLM {llm_url}, database in {db_dir}, env {settings.APP_ENV})", flush=True)
 app.run(host="127.0.0.1", port=port, threaded=True)

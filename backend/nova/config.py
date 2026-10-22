@@ -245,6 +245,31 @@ class Settings:
         if bool(self.GOOGLE_CLIENT_ID) != bool(self.GOOGLE_CLIENT_SECRET):
             (self.errors if prod else self.warnings).append("Google Workspace needs both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.")
 
+        # --- Microsoft 365 (Entra ID) for Outlook Calendar, Teams and automatic replies
+        self.MS_CLIENT_ID = self._str("MS_CLIENT_ID")
+        self.MS_CLIENT_SECRET = self._raw("MS_CLIENT_SECRET", "").strip()
+        self.MS_TENANT_ID = self._str("MS_TENANT_ID", "organizations")
+        self.MS_EXTRA_SCOPES = [x for x in self._str("MS_EXTRA_SCOPES").replace(",", " ").split() if x]
+        self.MS_ENABLED = bool(self.MS_CLIENT_ID and self.MS_CLIENT_SECRET)
+        if bool(self.MS_CLIENT_ID) != bool(self.MS_CLIENT_SECRET):
+            (self.errors if prod else self.warnings).append("Microsoft 365 needs both MS_CLIENT_ID and MS_CLIENT_SECRET.")
+        if prod and self.MS_ENABLED and self.MS_TENANT_ID in ("common", "consumers"):
+            self.errors.append("MS_TENANT_ID must be your organisation's tenant id (or 'organizations') in production.")
+        self.WORKSPACE_JOBS = self._bool("WORKSPACE_JOBS", True)
+        self.WORKSPACE_JOB_INTERVAL = self._int("WORKSPACE_JOB_INTERVAL_SECONDS", 60, 10, 3600)
+        # activity history, notifications, finished approvals and past reminders older than this are deleted
+        self.WORKSPACE_RETENTION_DAYS = self._int("WORKSPACE_RETENTION_DAYS", 180, 7, 3650)
+        # Simulated Gmail/Teams/Calendar accounts with sample data, to try the workspace without real accounts
+        self.WORKSPACE_DEMO = self._bool("WORKSPACE_DEMO", False)
+        if self.WORKSPACE_DEMO:
+            if prod:
+                self.errors.append("WORKSPACE_DEMO must not be used in production (it replaces Google and Microsoft with sample data).")
+            if not self.GOOGLE_ENABLED:
+                self.GOOGLE_CLIENT_ID, self.GOOGLE_CLIENT_SECRET, self.GOOGLE_ENABLED = "demo", "demo", True
+            if not self.MS_ENABLED:
+                self.MS_CLIENT_ID, self.MS_CLIENT_SECRET, self.MS_ENABLED = "demo", "demo", True
+            self.warnings.append("WORKSPACE_DEMO is on: Google and Microsoft are simulated with sample data; nothing reaches real accounts.")
+
         # --- channels: WhatsApp, Microsoft Teams, email (each turns on when its credentials are set)
         self.CHANNEL_LINK_CODE_MINUTES = self._int("CHANNEL_LINK_CODE_MINUTES", 10, 1, 120)
         self.CHANNEL_DOCUMENTS = self._str("CHANNEL_DOCUMENTS", "command").lower()  # command ("docs ..."), always, off
@@ -316,7 +341,7 @@ class Settings:
                 "embeddings": bool(self.EMBEDDING_MODEL), "smtp": bool(self.SMTP_HOST), "redis": bool(self.REDIS_URL),
                 "email_verification": self.REQUIRE_EMAIL_VERIFICATION, "registration_open": self.REGISTRATION_OPEN,
                 "database": self.DATABASE_URL.split(":", 1)[0].split("+")[0],
-                "google_workspace": self.GOOGLE_ENABLED,
+                "google_workspace": self.GOOGLE_ENABLED, "microsoft_365": self.MS_ENABLED,
                 "channels": {"whatsapp": self.WHATSAPP_ENABLED, "teams": self.TEAMS_ENABLED, "email": self.EMAIL_CHANNEL_ENABLED}}
 
 

@@ -50,6 +50,24 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Optional PostgreSQL instead of SQLite:  docker compose --profile postgres up -d
+  # and set DATABASE_URL=postgresql+psycopg://nova:${POSTGRES_PASSWORD}@postgres:5432/nova
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: nova
+      POSTGRES_USER: nova
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - nova-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "nova"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   nova-data:
   nova-mysql:
+  nova-postgres:

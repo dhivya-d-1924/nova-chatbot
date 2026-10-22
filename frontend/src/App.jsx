@@ -11,6 +11,7 @@ import DocumentsPanel from "./components/DocumentsPanel";
 import MemoryPanel from "./components/MemoryPanel";
 import Sidebar from "./components/Sidebar";
 import StudyPanel from "./components/StudyPanel";
+import WorkspaceView from "./components/WorkspaceView";
 import { useAuth } from "./hooks/useAuth";
 import { useChat } from "./hooks/useChat";
 import { useDocuments } from "./hooks/useDocuments";
@@ -35,7 +36,8 @@ function ChatApp({ user, auth }) {
   const [accountTab, setAccountTab] = useState("profile");
   const [study, setStudy] = useState(null); // null = closed, {} = subject list, { id, tab } = a subject
   const [health, setHealth] = useState(null);
-  const [view, setView] = useState("chat"); // chat | admin
+  const [view, setView] = useState("chat"); // chat | admin | workspace
+  const [workspaceTab, setWorkspaceTab] = useState("today");
   const [menuOpen, setMenuOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [confirm, setConfirm] = useState(null); // { type: "clear" } | { type: "delete", conv }
@@ -52,17 +54,19 @@ function ChatApp({ user, auth }) {
   }, [health, online, checkHealth]);
   useEffect(() => { if (online) checkHealth(); }, [online, checkHealth]);
 
-  // Back from Google's sign-in page: show the result once and tidy the address bar.
+  // Back from Google's or Microsoft's sign-in page: show the result once, tidy the address bar, open Workspace.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    if (q.get("integration") !== "google") return;
+    const provider = q.get("integration");
+    if (provider !== "google" && provider !== "microsoft") return;
+    const name = provider === "google" ? "Google" : "Microsoft 365";
     const status = q.get("status");
-    if (status === "connected") toast.success(`Google connected (${q.get("reason") || "your account"}).`);
-    else if (status === "cancelled") toast.info("Google connection cancelled.");
-    else toast.error(`Couldn't connect Google: ${q.get("reason") || "unknown error"}`);
+    if (status === "connected") toast.success(`${name} connected (${q.get("reason") || "your account"}).`);
+    else if (status === "cancelled") toast.info(`${name} connection cancelled.`);
+    else toast.error(`Couldn't connect ${name}: ${q.get("reason") || "unknown error"}`);
     window.history.replaceState(null, "", window.location.pathname);
-    setAccountTab("apps");
-    setAccountOpen(true);
+    setWorkspaceTab("accounts");
+    setView("workspace");
   }, [toast]);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -110,9 +114,13 @@ function ChatApp({ user, auth }) {
                 onMemory={() => { setMemoryOpen(true); setMenuOpen(false); }}
                 onAccount={() => { setAccountTab("profile"); setAccountOpen(true); setMenuOpen(false); }}
                 onStudy={() => { setStudy({}); setMenuOpen(false); }}
+                onWorkspace={() => { setWorkspaceTab("today"); setView("workspace"); setMenuOpen(false); }}
               />
               {view === "admin" && user.role === "admin" ? (
                 <AdminDashboard me={user} onBack={() => setView("chat")} onOpenMenu={() => setMenuOpen(true)} />
+              ) : view === "workspace" ? (
+                <WorkspaceView initialTab={workspaceTab} onBack={() => setView("chat")} onOpenMenu={() => setMenuOpen(true)}
+                  onOpenChat={(cid) => { setView("chat"); chat.selectConversation(cid); }} />
               ) : (
                 <ChatWindow
                   chat={chat}

@@ -78,6 +78,18 @@ Admin → Apps and choose the actions the assistant may use; reads run directly,
 keys are encrypted and never reach the AI. Each person can connect their own Google account (Calendar, Drive, Gmail;
 creating events needs approval). Setup: [INTEGRATIONS.md](INTEGRATIONS.md).
 
+**Workspace agent (Gmail, Teams, calendars, leave)** – connect Google Workspace and/or Microsoft 365 and open
+**Workspace**: an **Inbox** of everything waiting for your response across Gmail and Teams, AI-drafted replies and
+email ↔ Teams conversions (drafts only), action items found in both with source links, email triage, one search
+across Gmail and Teams with filters, forwarding with attachments; one day view across Google and Outlook calendars
+with conflicts, a briefing (facts kept apart from suggestions), free-time search across colleagues' calendars, meeting invitations, leave and absence tracking (scans
+Gmail and Teams, finds affected meetings, drafts reschedule notices), out-of-office for Gmail and Outlook, action items,
+reminders and follow-ups, notifications (app, email, WhatsApp, Teams; quiet hours) and scheduled jobs (morning
+briefing, digests, end-of-day and weekly summaries). Three automation modes, **Assisted** by default: nothing anyone
+else can see is sent without your approval, every action is logged with the provider's confirmation, and one click
+pauses everything; failed sends can be retried without ever sending twice. Try it without accounts with
+`WORKSPACE_DEMO=true` (development only). Setup: [WORKSPACE.md](WORKSPACE.md).
+
 **Study mode** – create a subject, add the syllabus and study material, and get a day-by-day study plan (5 days by
 default, up to 14) with topics, goals and tasks you can tick off. Generate study material for any topic or plan day
 (notes, key terms, revision list, practice questions with answers, all cited). The subject tutor chat answers **only
@@ -104,13 +116,14 @@ placeholders. The most important:
 | `APP_ENV` | `development` (default), `testing` or `production`. Production refuses unsafe settings. |
 | `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` | AI provider. The key stays on the server. |
 | `SECRET_KEY` | Required in production (signs reset/verification links). |
-| `DATABASE_URL` | `sqlite:///chat.db` (default) or `mysql+pymysql://user:pass@host:3306/db`. |
+| `DATABASE_URL` | `sqlite:///chat.db` (default), `postgresql+psycopg://user:pass@host:5432/db` or `mysql+pymysql://user:pass@host:3306/db`. |
 | `APP_URL`, `ALLOWED_ORIGINS` | Public frontend address and the origins allowed to call the API. |
 | `REDIS_URL` | Shared rate limits/quotas across workers (recommended in production). |
 | `SMTP_*`, `REQUIRE_EMAIL_VERIFICATION` | Email for verification and reset links. |
 | `DAILY_TOKEN_LIMIT_PER_USER`, `MONTHLY_BUDGET_USD`, `LLM_PRICE_*` | Cost controls and cost estimates. |
 | `EMBEDDING_MODEL`, `OCR_ENABLED` | Semantic search; OCR for scans. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `INTEGRATION_ALLOWED_HOSTS` | Google Workspace and internal app limits (see INTEGRATIONS.md). |
+| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT_ID`, `MS_EXTRA_SCOPES`, `WORKSPACE_JOBS`, `WORKSPACE_RETENTION_DAYS`, `WORKSPACE_DEMO` | Microsoft 365, background jobs, retention and demo mode for the workspace agent (see WORKSPACE.md). |
 | `WHATSAPP_*`, `TEAMS_*`, `EMAIL_CHANNEL_*` | WhatsApp, Microsoft Teams and email channels (see CHANNELS.md). |
 
 ## API (summary)
@@ -127,6 +140,7 @@ public config) need the session cookie; state-changing requests also need the `X
 | Chat | `POST /chat/stream` (SSE: `user`, `delta`, `step`, `done`, `error`; `: ping` heartbeats), `POST /chat`, `POST /chat/resume`, `GET /tools`, `POST /messages/<id>/feedback` |
 | Documents | `GET/POST /documents`, `GET /documents/config`, `DELETE /documents/<id>`, `POST /documents/<id>/reindex` |
 | Integrations | `GET /integrations`, `GET /integrations/google/connect`, `GET /integrations/google/callback`, `DELETE /integrations/google`; admin `GET/POST /admin/integrations`, `PATCH/DELETE /admin/integrations/<id>`, `POST/PATCH/DELETE /admin/integrations/<id>/actions[/<action>]`, `POST …/actions/<action>/test` |
+| Workspace | `GET /workspace/status`, `GET/PUT /workspace/prefs`, `GET /workspace/microsoft/connect`, `GET /workspace/microsoft/callback`, `DELETE /workspace/microsoft`, `GET /workspace/calendar`, `POST /workspace/slots`, `POST /workspace/meetings`, `GET /workspace/search` (`source`, `from`, `since`, `until`, `page`), `GET /workspace/inbox/needs-response`, `POST /workspace/inbox/{triage,action-items,convert}`, `GET /workspace/email/<id>`, `POST /workspace/email/<id>/read`, `GET /workspace/teams/channels`, `POST /workspace/briefing`, `GET/POST /workspace/approvals`, `PATCH /workspace/approvals/<id>`, `POST /workspace/approvals/<id>/{approve,retry,discard}`, `GET /workspace/activity`, `GET/POST /workspace/absences`, `PATCH/DELETE /workspace/absences/<id>`, `POST /workspace/leave/scan`, `GET /workspace/absences/<id>/affected`, `POST /workspace/absences/<id>/notices`, `GET/PUT /workspace/ooo`, `POST /workspace/ooo/{preview,test,enable,disable}`, `GET/POST /workspace/action-items`, `PATCH/DELETE /workspace/action-items/<id>`, `GET/POST /workspace/reminders`, `DELETE /workspace/reminders/<id>`, `GET /workspace/notifications`, `POST /workspace/notifications/read`, `GET /workspace/jobs`, `PUT /workspace/jobs/<kind>`, `POST /workspace/jobs/<kind>/run` |
 | Study | `GET/POST /subjects`, `GET/PATCH/DELETE /subjects/<id>`, `POST/DELETE /subjects/<id>/documents[/<doc>]`, `POST /subjects/<id>/plan`, `PATCH /subjects/<id>/plan/days/<n>`, `GET/POST /subjects/<id>/notes`, `GET/DELETE /subjects/<id>/notes/<note>`, `POST /subjects/<id>/chat`, `GET /doubts`, `POST /subjects/<id>/doubts`, `PATCH/DELETE /doubts/<id>` |
 | Channels | `GET /channels`, `POST /channels/<whatsapp|teams|email>/link-code`, `DELETE /channels/links/<id>`; webhooks `GET/POST /channels/whatsapp/webhook`, `POST /channels/teams/messages`; `GET /admin/channels` |
 | Other | `POST/GET/DELETE /attachments[/<id>]`, `GET/PUT/POST/DELETE /memory…`, `GET /reports[/<id>]`, `GET/POST /handoffs` |

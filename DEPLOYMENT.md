@@ -158,6 +158,20 @@ redeploy. The webhooks need your public HTTPS address; behind Caddy/nginx no ext
 ordinary `POST /api/...` requests). Check with `flask --app app channels`. The email channel needs outgoing SMTP
 (not available on Render's free plan) and polls from one worker at a time.
 
+## 10b. Workspace agent (Google, Microsoft 365, background jobs)
+Set `GOOGLE_*` and/or `MS_*` (step-by-step in [WORKSPACE.md](WORKSPACE.md)) and redeploy. Background jobs run inside
+the app (`WORKSPACE_JOBS=true`); each job row is leased, so several workers or servers never run the same job twice.
+On hosts that sleep when idle (Render free plan) jobs only run while the app is awake, so either keep it awake or set
+`WORKSPACE_JOBS=false` and run `flask --app app workspace-jobs --run-due` every minute from cron.
+
+For several workers, PostgreSQL is recommended:
+`docker compose --profile postgres up -d` with `POSTGRES_PASSWORD=…` and
+`DATABASE_URL=postgresql+psycopg://nova:<password>@postgres:5432/nova` (the Docker image already includes the driver;
+without Docker, `pip install "psycopg[binary]"`). On Render, create a PostgreSQL database and paste its internal URL,
+changing the `postgresql://` prefix to `postgresql+psycopg://`. Tables are created on start; the equivalent SQL is in
+`backend/migrations/schema-<dialect>.sql` if your DBA prefers to create them. Never set `WORKSPACE_DEMO` on a real
+server (production refuses it).
+
 ## 11. Troubleshooting
 | Symptom | Fix |
 |---|---|
@@ -171,4 +185,6 @@ ordinary `POST /api/...` requests). Check with `flask --app app channels`. The e
 | Provider errors mentioning `stream_options` | Set `LLM_STREAM_USAGE=false`. |
 | Scanned PDFs say "No readable text" | Install `tesseract-ocr` plus `pip install pytesseract pypdfium2`. |
 | Password-reset emails don't arrive | Configure `SMTP_*`; in development the link is printed in the backend terminal. |
+| Workspace says “Reconnect” | The person revoked access or the token expired; they click **Reconnect** under Workspace → Accounts. |
+| Microsoft sign-in: “AADSTS50011 redirect URI mismatch” | The Entra redirect URI must be exactly `<APP_URL>/api/workspace/microsoft/callback`. |
 | Locked out of an account | An admin can **Unlock** it under Admin → Users, or reset the password by email. |

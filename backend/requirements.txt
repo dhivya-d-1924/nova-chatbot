@@ -14,6 +14,7 @@ tzdata>=2024.1; sys_platform == "win32"
 
 # Optional (install when you need them):
 #   pymysql>=1.1        DATABASE_URL=mysql+pymysql://...
+#   psycopg[binary]>=3.2  DATABASE_URL=postgresql+psycopg://user:pass@host:5432/nova (tested with PostgreSQL 16)
 #   redis>=5.0          REDIS_URL=redis://...  (shared rate limits/quotas across workers)
 #   pytesseract>=0.3 pypdfium2>=4   OCR for scanned PDFs and images (also needs the tesseract program)
 #   ddgs                web search tool without an API key

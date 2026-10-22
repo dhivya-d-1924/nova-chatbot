@@ -82,7 +82,15 @@ def make_app(tmp_path, fake_llm_url):
     from nova import security
 
     def _make(**overrides):
-        cfg = {"APP_ENV": "testing", "DATABASE_URL": f"sqlite:///{tmp_path}/test.db", "_SKIP_ENV_FILE": "1",
+        db_url = os.environ.get("TEST_DATABASE_URL")
+        if db_url:  # e.g. postgresql+psycopg://postgres@/nova_test?host=/run/pg&port=5432 : start each app from an empty schema
+            from sqlalchemy import create_engine, text
+            eng = create_engine(db_url)
+            with eng.begin() as c:
+                c.execute(text("DROP SCHEMA public CASCADE"))
+                c.execute(text("CREATE SCHEMA public"))
+            eng.dispose()
+        cfg = {"APP_ENV": "testing", "DATABASE_URL": db_url or f"sqlite:///{tmp_path}/test.db", "_SKIP_ENV_FILE": "1",
                "LLM_API_KEY": "test-key", "LLM_BASE_URL": fake_llm_url, "LLM_MODEL": "fake-model",
                "LLM_MAX_RETRIES": "0", "ALLOWED_ORIGINS": "http://localhost:5173", "APP_URL": "http://localhost:5173",
                "SEARCH_PROVIDER": "none", "REGISTER_RATE_LIMIT_PER_HOUR": "1000"}

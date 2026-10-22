@@ -74,8 +74,10 @@ see DEPLOYMENT.md), or you connect the two with a VPN/tunnel.
 3. Under **APIs & Services → OAuth consent screen**, choose User type **Internal**, so only your Workspace domain
    can use it and Google's app review isn't needed. Add the scopes:
    - `.../auth/calendar.events`
+   - `.../auth/calendar.freebusy`
    - `.../auth/drive.readonly`
-   - `.../auth/gmail.readonly`
+   - `.../auth/gmail.modify` (read, label, draft and send; sending always needs approval)
+   - `.../auth/gmail.settings.basic` (out-of-office replies)
    - `openid`
    - `email`
 4. Under **APIs & Services → Credentials → Create credentials → OAuth client ID**:
@@ -104,9 +106,10 @@ Then ask, for example:
 - Each person connects **their own** account; Nova never sees anyone else's Google data.
 - Tokens are encrypted at rest, refreshed automatically, and revoked on disconnect. If someone removes Nova's access
   in their Google account, Nova notices and asks them to reconnect.
-- The sign-in link is signed, expires after 10 minutes, and only works for the Nova user who started it.
+- The sign-in uses PKCE; the link expires after 10 minutes, works once, and only for the Nova user who started it.
 - `GOOGLE_ALLOWED_DOMAIN` refuses personal Gmail and other companies' accounts.
-- Drive and Gmail access is **read-only**. The only write action, creating a calendar event, always needs approval.
+- Drive is **read-only**. Anything other people would see (sending or forwarding mail, invitations, out-of-office)
+  always needs approval; see [WORKSPACE.md](WORKSPACE.md) for the full workspace agent and its automation modes.
 
 ---
 

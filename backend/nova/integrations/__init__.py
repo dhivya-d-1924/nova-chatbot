@@ -14,4 +14,10 @@ def tools_for(ctx):
         import logging
         logging.getLogger("nova.integrations").exception("could not load internal app tools")
     out.update(google.tools_for(ctx))
+    try:
+        from ..workspace import tools as workspace_tools
+        out.update(workspace_tools.tools_for(ctx))
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger("nova.integrations").exception("could not load workspace tools")
     return out

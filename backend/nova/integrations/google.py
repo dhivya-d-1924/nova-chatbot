@@ -10,18 +10,18 @@ calendar, search and read their Drive files, search and read their Gmail, and cr
 import json
 import logging
 import re
-import secrets
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import delete, insert, select, update
 
 from .. import db, security, tools
 from ..config import settings
+from ..workspace import oauth
 
 log = logging.getLogger("nova.integrations.google")
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -29,9 +29,12 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 API = "https://www.googleapis.com"
-SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.events",
-          "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/gmail.readonly"]
-STATE_MAX_AGE = 600
+SCOPES = ["openid", "email",
+          "https://www.googleapis.com/auth/calendar.events",        # read, create, move and cancel your events
+          "https://www.googleapis.com/auth/calendar.freebusy",      # colleagues' free/busy (not event details)
+          "https://www.googleapis.com/auth/drive.readonly",
+          "https://www.googleapis.com/auth/gmail.modify",           # read, label, draft and send (no permanent delete)
+          "https://www.googleapis.com/auth/gmail.settings.basic"]   # vacation (out-of-office) responder
 ID_PATTERN = re.compile(r"[A-Za-z0-9_\-]{5,200}")
 EXPORTS = {"application/vnd.google-apps.document": "text/plain", "application/vnd.google-apps.presentation": "text/plain",
            "application/vnd.google-apps.spreadsheet": "text/csv"}
@@ -43,10 +46,6 @@ class GoogleError(Exception):
 
 def redirect_uri():
     return f"{settings.APP_URL.rstrip('/')}/api/integrations/google/callback"
-
-
-def _signer():
-    return URLSafeTimedSerializer(settings.SECRET_KEY, salt="google-oauth")
 
 
 # ------------------------------------------------------------------ HTTP
@@ -72,31 +71,32 @@ def _http(method, url, data=None, headers=None, form=False, raw=False):
 
 # ------------------------------------------------------------------ connect / disconnect
 def auth_url(uid):
-    state = _signer().dumps({"u": uid, "n": secrets.token_urlsafe(8)})
+    state, challenge = oauth.begin(uid, "google")
     q = {"client_id": settings.GOOGLE_CLIENT_ID, "redirect_uri": redirect_uri(), "response_type": "code",
          "scope": " ".join(SCOPES), "access_type": "offline", "prompt": "consent", "include_granted_scopes": "true",
-         "state": state}
+         "state": state, "code_challenge": challenge, "code_challenge_method": "S256"}
     if settings.GOOGLE_ALLOWED_DOMAIN:
         q["hd"] = settings.GOOGLE_ALLOWED_DOMAIN
+    if settings.WORKSPACE_DEMO:   # simulated account: skip Google's consent screen, same callback and PKCE checks
+        return f"{redirect_uri()}?{urllib.parse.urlencode({'code': 'demo', 'state': state})}"
     return f"{AUTH_URL}?{urllib.parse.urlencode(q)}"
 
 
 def check_state(state, uid):
+    """Returns the PKCE verifier for this sign-in (single use)."""
     try:
-        data = _signer().loads(state or "", max_age=STATE_MAX_AGE)
-    except SignatureExpired:
-        raise GoogleError("The sign-in took too long. Try connecting again.")
-    except BadSignature:
-        raise GoogleError("Invalid sign-in response.")
-    if data.get("u") != uid:
-        raise GoogleError("This Google sign-in was started by a different Nova account.")
+        return oauth.finish(state, uid, "google")
+    except oauth.StateError as e:
+        raise GoogleError(str(e))
 
 
-def finish(uid, code):
+def finish(uid, code, verifier=None):
     """Exchange the code, check the account and store the (encrypted) tokens. Returns the Google email."""
-    tok = _http("POST", TOKEN_URL, {"code": code, "client_id": settings.GOOGLE_CLIENT_ID,
-                                    "client_secret": settings.GOOGLE_CLIENT_SECRET, "redirect_uri": redirect_uri(),
-                                    "grant_type": "authorization_code"}, form=True)
+    data = {"code": code, "client_id": settings.GOOGLE_CLIENT_ID, "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "redirect_uri": redirect_uri(), "grant_type": "authorization_code"}
+    if verifier:
+        data["code_verifier"] = verifier
+    tok = _http("POST", TOKEN_URL, data, form=True)
     access = tok.get("access_token")
     if not access:
         raise GoogleError("Google didn't return an access token.")
@@ -178,16 +178,44 @@ def _access_token(uid):
     return tok["access_token"]
 
 
+RETRY_DELAY = 1.0     # seconds before the first retry of a rate-limited/unavailable request (doubles each time)
+MAX_RETRIES = 3
+
+
+def _expire_token(uid):
+    with db.engine.begin() as c:
+        c.execute(update(db.user_connections).where(db.user_connections.c.user_id == uid, db.user_connections.c.provider == "google")
+                  .values(expires_at=0))
+
+
 def _api(uid, method, path, params=None, body=None, raw=False):
+    """Call a Google API as the user. Retries quota/rate limits (429, rateLimitExceeded) and temporary errors (500/503)
+    with exponential back-off, and refreshes the access token once on 401."""
     url = f"{API}{path}" + (f"?{urllib.parse.urlencode(params, doseq=True)}" if params else "")
-    try:
-        return _http(method, url, body, headers={"Authorization": f"Bearer {_access_token(uid)}"}, raw=raw)
-    except GoogleError as e:
-        if str(e).startswith("403"):
-            raise tools.ToolError("Google refused this request. Reconnect Google and allow the requested access.")
-        if str(e).startswith("404"):
-            raise tools.ToolError("Google couldn't find that item.")
-        raise tools.ToolError(f"Google error {e}")
+    refreshed = False
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return _http(method, url, body, headers={"Authorization": f"Bearer {_access_token(uid)}"}, raw=raw)
+        except GoogleError as e:
+            code = str(e)[:3]
+            if code == "401" and not refreshed:
+                refreshed = True
+                _expire_token(uid)
+                continue
+            limited = code in ("429", "500", "502", "503") or (code == "403" and "ratelimitexceeded" in str(e).lower())
+            if limited and attempt < MAX_RETRIES:
+                time.sleep(min(RETRY_DELAY * 2 ** attempt, 10))
+                continue
+            if limited:
+                raise tools.ToolError("Google is rate-limiting or temporarily unavailable. Try again in a minute.")
+            if code == "401":
+                raise tools.ToolError("Google access expired. Reconnect Google in Workspace > Accounts.")
+            if code == "403":
+                raise tools.ToolError("Google refused this request. Reconnect Google and allow the requested access.")
+            if code == "404":
+                raise tools.ToolError("Google couldn't find that item.")
+            raise tools.ToolError(f"Google error {e}")
+    raise tools.ToolError("Google request failed.")
 
 
 # ------------------------------------------------------------------ tools
@@ -206,43 +234,6 @@ def _when(v, default):
     except ValueError:
         raise tools.ToolError("Dates must look like 2026-10-21T15:00:00+05:30.")
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
-
-
-def calendar_list(ctx, a):
-    now = datetime.now(timezone.utc)
-    start, end = _when(a.get("time_min"), now), _when(a.get("time_max"), None)
-    end = end or start + timedelta(days=7)
-    params = {"timeMin": start.isoformat(), "timeMax": end.isoformat(), "singleEvents": "true", "orderBy": "startTime",
-              "maxResults": 25}
-    if a.get("query"):
-        params["q"] = str(a["query"])[:200]
-    items = _api(ctx["uid"], "GET", "/calendar/v3/calendars/primary/events", params).get("items", [])
-    if not items:
-        return "No events in that period.", "0 events", {}
-    lines = []
-    for e in items:
-        s, f = e.get("start", {}), e.get("end", {})
-        who = len(e.get("attendees") or [])
-        lines.append(f"- {s.get('dateTime') or s.get('date')} to {f.get('dateTime') or f.get('date')}: {e.get('summary', '(no title)')}"
-                     + (f" @ {e['location']}" if e.get("location") else "") + (f" ({who} attendees)" if who else "")
-                     + f" [id {e.get('id')}]")
-    return "\n".join(lines), f"{len(items)} event(s)", {}
-
-
-def calendar_create(ctx, a):
-    summary = str(a.get("summary") or "").strip()[:200]
-    if not summary:
-        raise tools.ToolError("The event needs a title.")
-    start, end = _when(a.get("start"), None), _when(a.get("end"), None)
-    if not start or not end or end <= start:
-        raise tools.ToolError("Give a start and an end time (end after start).")
-    attendees = [x.strip() for x in str(a.get("attendees") or "").split(",") if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", x.strip())]
-    body = {"summary": summary, "description": str(a.get("description") or "")[:4000],
-            "start": {"dateTime": start.isoformat()}, "end": {"dateTime": end.isoformat()},
-            "attendees": [{"email": x} for x in attendees[:50]]}
-    ev = _api(ctx["uid"], "POST", "/calendar/v3/calendars/primary/events",
-              {"sendUpdates": "all" if attendees else "none"}, body)
-    return f"Event created: {ev.get('summary')} on {start.isoformat()} ({ev.get('htmlLink', '')}).", "Event created", {}
 
 
 def drive_search(ctx, a):
@@ -330,19 +321,6 @@ def _S(**props):
 
 
 TOOLS = {
-    "google_calendar_events": dict(
-        label="Google Calendar: your events", desc="List events in the user's Google Calendar between two times (default: the next 7 days).",
-        params=_S(**{"time_min?": "Start, ISO 8601 with timezone", "time_max?": "End, ISO 8601 with timezone",
-                     "query?": "Words to filter events by"}),
-        describe=lambda a: "Checking your Google Calendar", run=calendar_list),
-    "google_calendar_create_event": dict(
-        label="Google Calendar: create an event", sensitive=True,
-        desc="Create an event in the user's Google Calendar. Attendees get an invitation. The user must approve it.",
-        params=_S(summary="Event title", start="Start, ISO 8601 with timezone", end="End, ISO 8601 with timezone",
-                  **{"description?": "Details", "attendees?": "Comma-separated email addresses"}),
-        describe=lambda a: f"Create calendar event “{str(a.get('summary', ''))[:60]}” at {a.get('start', '?')}",
-        audit=lambda a: {"summary": str(a.get("summary", ""))[:100], "attendees": len(str(a.get("attendees") or "").split(",")) if a.get("attendees") else 0},
-        run=calendar_create),
     "google_drive_search": dict(
         label="Google Drive: search files", desc="Search the user's Google Drive by file name and content.",
         params=_S(query="What to look for"), describe=lambda a: f"Searching Google Drive: {a.get('query', '')}", run=drive_search),

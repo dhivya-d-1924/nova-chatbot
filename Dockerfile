@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr t
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/backend
 COPY backend/requirements.txt ./
-RUN pip install -r requirements.txt pymysql redis pytesseract pypdfium2
+RUN pip install -r requirements.txt pymysql "psycopg[binary]" redis pytesseract pypdfium2
 COPY backend/ ./
 COPY --from=web /web/dist /app/frontend/dist
 RUN useradd --system --uid 10001 --home /app nova && mkdir -p /data && chown -R nova /data \

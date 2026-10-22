@@ -284,6 +284,128 @@ user_connections = Table(       # a person's own account in an external service 
     Column("created_at", BigInteger, nullable=False),
     Column("updated_at", BigInteger, nullable=False),
 )
+oauth_states = Table(           # one-time sign-in attempts (Google / Microsoft) with their PKCE verifier
+    "oauth_states", md,
+    Column("id", String(64), primary_key=True),            # SHA-256 of the state value sent to the provider
+    Column("user_id", String(36), nullable=False),
+    Column("provider", String(16), nullable=False),
+    Column("verifier", Text, nullable=False),              # encrypted PKCE code_verifier
+    Column("expires_at", BigInteger, nullable=False, index=True),
+)
+workspace_prefs = Table(        # per-user workspace assistant settings (time zone, hours, automation mode…)
+    "workspace_prefs", md,
+    Column("user_id", String(36), primary_key=True),
+    Column("prefs", Text, nullable=False),
+    Column("updated_at", BigInteger, nullable=False),
+)
+workspace_drafts = Table(       # approvals center: an outgoing action previewed and waiting for the user
+    "workspace_drafts", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("kind", String(32), nullable=False),            # email_send | email_reply | teams_chat | calendar_create | ooo_enable …
+    Column("title", String(300), nullable=False),
+    Column("payload", LongText, nullable=False),
+    Column("status", String(12), nullable=False, default="pending"),  # pending | sent | failed | discarded
+    Column("origin", String(16), nullable=False, default="assistant"),  # assistant | leave | job | user
+    Column("result", Text, nullable=True),
+    Column("error", Text, nullable=True),
+    Column("created_at", BigInteger, nullable=False, index=True),
+    Column("decided_at", BigInteger, nullable=True),
+)
+workspace_activity = Table(     # what the assistant did on the user's behalf (verified results only)
+    "workspace_activity", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("kind", String(32), nullable=False),
+    Column("summary", Text, nullable=False),
+    Column("provider", String(16), nullable=True),
+    Column("ref", String(500), nullable=True),             # provider id or link of the created/sent item
+    Column("status", String(12), nullable=False),          # done | failed | skipped
+    Column("idem_key", String(64), nullable=True, index=True),  # duplicate-send protection
+    Column("created_at", BigInteger, nullable=False, index=True),
+)
+absences = Table(               # leave and availability the user knows about (no medical or personal reasons stored)
+    "absences", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("person_email", String(255), nullable=False),
+    Column("person_name", String(200), nullable=True),
+    Column("start_date", String(10), nullable=False),      # YYYY-MM-DD
+    Column("end_date", String(10), nullable=False),
+    Column("kind", String(16), nullable=False),            # request | announcement | approved
+    Column("status", String(12), nullable=False),          # proposed | confirmed | dismissed
+    Column("source", String(16), nullable=False),          # manual | gmail | teams | assistant
+    Column("source_ref", String(500), nullable=True),
+    Column("created_at", BigInteger, nullable=False),
+    Column("updated_at", BigInteger, nullable=False),
+)
+ooo_settings = Table(           # the user's out-of-office auto-reply
+    "ooo_settings", md,
+    Column("user_id", String(36), primary_key=True),
+    Column("start_at", BigInteger, nullable=False),
+    Column("end_at", BigInteger, nullable=False),
+    Column("internal_message", Text, nullable=False),
+    Column("external_message", Text, nullable=True),
+    Column("alternate_contact", String(255), nullable=True),
+    Column("providers", Text, nullable=False),             # JSON list: gmail, outlook
+    Column("status", String(12), nullable=False),          # draft | on | off
+    Column("applied", Text, nullable=True),                # JSON per-provider result
+    Column("updated_at", BigInteger, nullable=False),
+)
+action_items = Table(
+    "action_items", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("title", String(500), nullable=False),
+    Column("owner", String(255), nullable=True),
+    Column("due_at", BigInteger, nullable=True),
+    Column("source", String(16), nullable=False),          # manual | assistant | gmail | teams
+    Column("source_ref", String(500), nullable=True),
+    Column("status", String(8), nullable=False, default="open"),  # open | done
+    Column("created_at", BigInteger, nullable=False),
+    Column("done_at", BigInteger, nullable=True),
+)
+reminders = Table(              # "remind me…" and "follow up if no reply by…"
+    "reminders", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("text", String(1000), nullable=False),
+    Column("remind_at", BigInteger, nullable=False, index=True),
+    Column("kind", String(12), nullable=False),            # reminder | followup
+    Column("ref", Text, nullable=True),                    # JSON: provider + thread/message for follow-ups
+    Column("status", String(12), nullable=False),          # pending | sent | resolved | cancelled
+    Column("created_at", BigInteger, nullable=False),
+    Column("done_at", BigInteger, nullable=True),
+)
+notifications = Table(
+    "notifications", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("kind", String(32), nullable=False),
+    Column("title", String(300), nullable=False),
+    Column("body", LongText, nullable=True),
+    Column("dedupe_key", String(200), nullable=False, unique=True),  # the same alert is never created twice
+    Column("pending_channels", Text, nullable=True),       # JSON channels still to deliver (waiting for quiet hours to end)
+    Column("delivered", Text, nullable=True),              # JSON channel -> result
+    Column("created_at", BigInteger, nullable=False, index=True),
+    Column("read_at", BigInteger, nullable=True),
+)
+jobs = Table(                   # scheduled assistant jobs per user (briefings, reminders, summaries…)
+    "jobs", md,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False, index=True),
+    Column("kind", String(32), nullable=False),
+    Column("enabled", Integer, nullable=False, default=1),
+    Column("config", Text, nullable=True),                 # JSON, e.g. {"time": "08:30", "days": "mon-fri"}
+    Column("next_run_at", BigInteger, nullable=True, index=True),
+    Column("last_run_at", BigInteger, nullable=True),
+    Column("last_status", String(12), nullable=True),
+    Column("last_error", Text, nullable=True),
+    Column("attempts", Integer, nullable=False, default=0),
+    Column("lease_owner", String(64), nullable=True),
+    Column("lease_until", BigInteger, nullable=True),
+    Column("created_at", BigInteger, nullable=False),
+)
 subjects = Table(               # Study mode: a subject with its syllabus and material
     "subjects", md,
     Column("id", String(36), primary_key=True),
@@ -384,6 +506,8 @@ Index("ix_conversations_user_updated", conversations.c.user_id, conversations.c.
 Index("ix_usage_user_created", usage.c.user_id, usage.c.created_at)
 Index("ux_integration_action_name", integration_actions.c.integration_id, integration_actions.c.name, unique=True)
 Index("ux_user_connection", user_connections.c.user_id, user_connections.c.provider, unique=True)
+Index("ux_jobs_user_kind", jobs.c.user_id, jobs.c.kind, unique=True)
+Index("ix_activity_user_created", workspace_activity.c.user_id, workspace_activity.c.created_at)
 Index("ux_channel_links_external", channel_links.c.channel, channel_links.c.external_id, unique=True)
 
 _clock = threading.Lock()
@@ -515,3 +639,18 @@ def schema_version():
 
 
 LATEST_VERSION = MIGRATIONS[-1][0]
+
+
+def schema_sql(dialect="postgresql"):
+    """The full schema as SQL for one dialect (for review, or for DBAs who create tables themselves)."""
+    from sqlalchemy.dialects import mysql, postgresql, sqlite
+    from sqlalchemy.schema import CreateIndex, CreateTable
+    d = {"postgresql": postgresql.dialect(), "mysql": mysql.dialect(), "sqlite": sqlite.dialect()}[dialect]
+    out = [f"-- Nova schema for {dialect}. Generated by: flask --app app schema-sql --dialect {dialect}",
+           "-- The app creates and upgrades these tables itself on start (flask --app app migrate); versioned data",
+           "-- migrations are recorded in schema_migrations."]
+    for t in md.sorted_tables:
+        out.append(str(CreateTable(t).compile(dialect=d)).strip() + ";")
+        for ix in sorted(t.indexes, key=lambda i: i.name or ""):
+            out.append(str(CreateIndex(ix).compile(dialect=d)).strip() + ";")
+    return "\n\n".join(out) + "\n"

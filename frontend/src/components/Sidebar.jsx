@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Archive, ArchiveRestore, BookOpen, Brain, Download, LayoutDashboard, LogOut, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff,
+  Archive, ArchiveRestore, BookOpen, Brain, Briefcase, Download, LayoutDashboard, LogOut, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff,
   Plus, Search, Trash2, UserCog, X,
 } from "lucide-react";
 import Avatar from "./Avatar";
@@ -117,7 +117,7 @@ function ConversationItem({ c, active, onSelect, chat, onDelete }) {
   );
 }
 
-function Panel({ chat, activeId, onSelect, onNew, onDelete, onClose, showClose, user, onLogout, onAdmin, onMemory, onAccount, onStudy, view }) {
+function Panel({ chat, activeId, onSelect, onNew, onDelete, onClose, showClose, user, onLogout, onAdmin, onMemory, onAccount, onStudy, onWorkspace, view }) {
   const [search, setSearch] = useState(chat.query);
   const debounced = useDebounced(search, 300);
   const { setQuery } = chat;
@@ -191,6 +191,12 @@ function Panel({ chat, activeId, onSelect, onNew, onDelete, onClose, showClose, 
             <UserCog size={16} /> Account
           </button>
         </div>
+        <button
+          type="button" onClick={onWorkspace} aria-current={view === "workspace" ? "page" : undefined}
+          className={`mb-2 flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-sm transition-colors ${view === "workspace" ? "bg-accent/20 text-ink" : "text-muted hover:bg-ink/10 hover:text-ink"}`}
+        >
+          <Briefcase size={16} /> Workspace
+        </button>
         {user.role === "admin" && (
           <button
             type="button" onClick={onAdmin} aria-current={view === "admin" ? "page" : undefined}
