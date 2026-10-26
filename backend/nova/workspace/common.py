@@ -28,6 +28,19 @@ DEFAULT_PREFS = {
     "policies": {"ooo_on_own_absence": False, "ooo_internal": "", "ooo_external": "", "ooo_contact": ""},
     "notify_channels": ["app"], "default_calendar": "", "followup_days": 3, "reminder_minutes": 15,
 }
+# Old IANA names that browsers still report but some servers' time-zone data no longer includes.
+TZ_ALIASES = {"Asia/Calcutta": "Asia/Kolkata", "Asia/Saigon": "Asia/Ho_Chi_Minh", "Asia/Katmandu": "Asia/Kathmandu",
+              "Asia/Rangoon": "Asia/Yangon", "Asia/Dacca": "Asia/Dhaka", "Asia/Thimbu": "Asia/Thimphu",
+              "Asia/Ulan_Bator": "Asia/Ulaanbaatar", "Atlantic/Faeroe": "Atlantic/Faroe", "Europe/Kiev": "Europe/Kyiv",
+              "America/Buenos_Aires": "America/Argentina/Buenos_Aires", "Pacific/Truk": "Pacific/Chuuk",
+              "Pacific/Ponape": "Pacific/Pohnpei", "Pacific/Enderbury": "Pacific/Kanton", "UTC": "UTC", "Etc/UTC": "UTC"}
+
+
+def canonical_tz(name):
+    name = str(name or "").strip()
+    return TZ_ALIASES.get(name, name)
+
+
 HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 DATE = re.compile(r"\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])")
 EMAIL = re.compile(r"[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+")
@@ -54,12 +67,13 @@ def validate_prefs(changes):
         if k not in DEFAULT_PREFS:
             continue
         if k == "timezone":
+            v = canonical_tz(v)
             if v:
                 try:
-                    ZoneInfo(str(v))
+                    ZoneInfo(v)
                 except (ZoneInfoNotFoundError, ValueError):
                     raise ApiError(400, f"Unknown time zone '{v}'.", "invalid_field")
-            out[k] = str(v or "")
+            out[k] = v
         elif k in ("working_hours", "quiet_hours"):
             if not isinstance(v, dict) or not HHMM.fullmatch(str(v.get("start", ""))) or not HHMM.fullmatch(str(v.get("end", ""))):
                 raise ApiError(400, "Times must look like 09:00.", "invalid_field")
@@ -124,7 +138,7 @@ def save_prefs(uid, changes):
 # ------------------------------------------------------------------ time
 def tz_of(p):
     try:
-        return ZoneInfo(p.get("timezone") or "UTC")
+        return ZoneInfo(canonical_tz(p.get("timezone")) or "UTC")
     except (ZoneInfoNotFoundError, ValueError):
         return ZoneInfo("UTC")
 

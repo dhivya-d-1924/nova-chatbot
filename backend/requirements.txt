@@ -10,7 +10,7 @@ python-docx>=1.1
 Pillow>=10.0              # image documents / OCR
 PyJWT>=2.8                # verifies Microsoft Teams (Bot Framework) tokens
 gunicorn>=22.0; sys_platform != "win32"
-tzdata>=2024.1; sys_platform == "win32"
+tzdata>=2024.1  # full time-zone database incl. old names like Asia/Calcutta (slim Linux images lack them)
 
 # Optional (install when you need them):
 #   pymysql>=1.1        DATABASE_URL=mysql+pymysql://...

@@ -315,3 +315,25 @@ def test_schema_files_match_the_code():
 
 def test_fakes_are_importable_from_tests():
     assert FakeGoogle and FakeGraph and base64
+
+
+def test_google_403_says_which_api_to_enable_or_which_permission_is_missing(ws):
+    api, fg = ws["api"], ws["g"]
+    fg.errors = ['403: {"error": {"code": 403, "message": "Google Calendar API has not been used in project 123456 before or it is '
+                 'disabled. Enable it by visiting https://console.developers.google.com/...", "status": "PERMISSION_DENIED"}}']
+    r = api.get("/api/workspace/calendar")
+    text = json.dumps(r.json)
+    assert "Google Calendar API isn't turned on" in text and "calendar-json.googleapis.com?project=123456" in text
+    fg.errors = ['403: {"error": {"code": 403, "message": "Request had insufficient authentication scopes.", '
+                 '"errors": [{"reason": "insufficientPermissions"}]}}']
+    r = api.get(f"/api/workspace/email/{_id_of(fg, 'Q4 roadmap review')}")
+    assert r.status_code == 502 and "permission for the Gmail" in r.json["error"] and "Reconnect" in r.json["error"]
+
+
+def test_old_browser_time_zone_names_are_accepted_and_saved_under_the_current_name(ws):
+    api = ws["api"]
+    r = api.put("/api/workspace/prefs", {"timezone": "Asia/Calcutta"})
+    assert r.status_code == 200 and r.json["timezone"] == "Asia/Kolkata"
+    from nova.workspace import common
+    assert common.tz_of({"timezone": "Asia/Calcutta"}).key == "Asia/Kolkata"
+    assert api.put("/api/workspace/prefs", {"timezone": "Mars/Olympus"}).status_code == 400

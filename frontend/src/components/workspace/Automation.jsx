@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Pause, Play, Plus, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { useToast } from "../../lib/toast";
-import { Badge, Card, Err, Skeleton, field, secondary, useAction, when } from "./ui";
+import { Badge, Card, Err, Skeleton, field, secondary, timeZones, useAction, when } from "./ui";
 
 const MODES = [
   ["assisted", "1 · Assisted (recommended)", "Nova reads and summarises, prepares drafts and suggestions. Everything that changes something asks you first."],
@@ -18,7 +18,7 @@ export default function Automation({ status, onSaved }) {
   const [jobs, setJobs] = useState(null);
   const [holiday, setHoliday] = useState("");
   const a = useAction();
-  const zones = useMemo(() => { try { return Intl.supportedValuesOf("timeZone"); } catch { return [p.timezone || "UTC"]; } }, [p.timezone]);
+  const zones = useMemo(() => timeZones(p.timezone), [p.timezone]);
   const loadJobs = useCallback(() => api.ws.jobs().then(setJobs).catch(() => setJobs([])), []);
   useEffect(() => { loadJobs(); }, [loadJobs]);
   const save = (changes, msg = "Saved.") => a.run(async () => { const next = await api.ws.savePrefs(changes); setP(next); onSaved?.(); loadJobs(); toast.success(msg); });

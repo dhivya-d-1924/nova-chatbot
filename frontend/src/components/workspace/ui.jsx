@@ -60,3 +60,16 @@ export function localInput(d) {
 export function when(us) {
   return us ? new Date(us / 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
 }
+
+/** Browsers still report some old time-zone names (e.g. Asia/Calcutta); show and save the current ones. */
+const TZ_ALIASES = { "Asia/Calcutta": "Asia/Kolkata", "Asia/Saigon": "Asia/Ho_Chi_Minh", "Asia/Katmandu": "Asia/Kathmandu",
+  "Asia/Rangoon": "Asia/Yangon", "Asia/Dacca": "Asia/Dhaka", "Asia/Thimbu": "Asia/Thimphu", "Asia/Ulan_Bator": "Asia/Ulaanbaatar",
+  "Atlantic/Faeroe": "Atlantic/Faroe", "Europe/Kiev": "Europe/Kyiv", "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+  "Pacific/Truk": "Pacific/Chuuk", "Pacific/Ponape": "Pacific/Pohnpei", "Pacific/Enderbury": "Pacific/Kanton" };
+export const canonicalTz = (tz) => TZ_ALIASES[tz] || tz;
+
+export function timeZones(current) {
+  let list = [];
+  try { list = Intl.supportedValuesOf("timeZone"); } catch { list = []; }
+  return [...new Set([...list.map(canonicalTz), ...(current ? [current] : []), "UTC"])].sort();
+}

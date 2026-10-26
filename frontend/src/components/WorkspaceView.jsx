@@ -11,7 +11,7 @@ import Inbox from "./workspace/Inbox";
 import Leave from "./workspace/Leave";
 import Tasks from "./workspace/Tasks";
 import Today from "./workspace/Today";
-import { Badge, Card, Err, Skeleton } from "./workspace/ui";
+import { Badge, Card, Err, Skeleton, canonicalTz } from "./workspace/ui";
 
 const TABS = [
   ["today", "Today", CalendarDays], ["inbox", "Inbox", InboxIcon], ["approvals", "Approvals", ClipboardCheck], ["leave", "Leave", Plane], ["tasks", "Tasks", CheckSquare],
@@ -106,7 +106,7 @@ export default function WorkspaceView({ onBack, onOpenMenu, onOpenChat, initialT
   useEffect(() => {
     load().then((s) => {
       // first visit: use this device's time zone so times and working hours are right from the start
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const tz = canonicalTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
       if (s && !s.prefs.timezone && tz) api.ws.savePrefs({ timezone: tz }).then(load).catch(() => {});
     });
   }, [load]);
