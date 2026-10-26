@@ -60,8 +60,8 @@ def _http(method, url, data=None, headers=None, form=False, raw=False):
         with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
             content = r.read(10 * 1024 * 1024)
     except urllib.error.HTTPError as e:
-        detail = e.read(800).decode("utf-8", errors="replace")
-        raise GoogleError(f"{e.code}: {detail[:300]}") from e
+        detail = e.read(2000).decode("utf-8", errors="replace")
+        raise GoogleError(f"{e.code}: {detail[:1200]}") from e
     except urllib.error.URLError as e:
         raise GoogleError(f"couldn't reach Google ({e.reason})") from e
     if raw:
@@ -178,6 +178,27 @@ def _access_token(uid):
     return tok["access_token"]
 
 
+API_NAMES = {"/calendar/": ("Google Calendar API", "calendar-json.googleapis.com"),
+             "/gmail/": ("Gmail API", "gmail.googleapis.com"), "/drive/": ("Google Drive API", "drive.googleapis.com")}
+
+
+def _forbidden(path, detail):
+    """Say exactly why Google refused, so the person (or their admin) knows what to fix."""
+    low = detail.lower()
+    name, api_id = next((v for k, v in API_NAMES.items() if path.startswith(k)), ("this Google API", ""))
+    if any(w in low for w in ("has not been used in project", "it is disabled", "accessnotconfigured", "service_disabled")):
+        project = re.search(r"project[= ](\d+)", detail)
+        where = f"https://console.cloud.google.com/apis/library/{api_id}" + (f"?project={project.group(1)}" if project else "")
+        return (f"The {name} isn't turned on in the Google Cloud project behind Nova's sign-in. "
+                f"Enable it at {where}, wait a minute and try again.")
+    if any(w in low for w in ("insufficient authentication scopes", "insufficientpermissions", "access_token_scope_insufficient")):
+        return (f"Google didn't give Nova permission for the {name.replace(' API', '')}. Go to Workspace > Accounts, click "
+                "Reconnect and tick every box on Google's permission screen.")
+    if "domain policy" in low or "admin" in low and "disabled" in low:
+        return f"Your Google Workspace administrator has blocked the {name} for your account."
+    return "Google refused this request. Reconnect Google and allow the requested access."
+
+
 RETRY_DELAY = 1.0     # seconds before the first retry of a rate-limited/unavailable request (doubles each time)
 MAX_RETRIES = 3
 
@@ -211,7 +232,7 @@ def _api(uid, method, path, params=None, body=None, raw=False):
             if code == "401":
                 raise tools.ToolError("Google access expired. Reconnect Google in Workspace > Accounts.")
             if code == "403":
-                raise tools.ToolError("Google refused this request. Reconnect Google and allow the requested access.")
+                raise tools.ToolError(_forbidden(path, str(e)))
             if code == "404":
                 raise tools.ToolError("Google couldn't find that item.")
             raise tools.ToolError(f"Google error {e}")
